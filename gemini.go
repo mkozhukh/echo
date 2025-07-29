@@ -13,15 +13,21 @@ type GeminiClient struct {
 
 // Gemini-specific request/response structures
 type GeminiRequest struct {
-	Contents []struct {
-		Parts []struct {
-			Text string `json:"text"`
-		} `json:"parts"`
-	} `json:"contents"`
-	GenerationConfig *struct {
+	Contents          []GeminiContent `json:"contents"`
+	SystemInstruction *GeminiContent  `json:"systemInstruction,omitempty"`
+	GenerationConfig  *struct {
 		Temperature     *float64 `json:"temperature,omitempty"`
 		MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 	} `json:"generationConfig,omitempty"`
+}
+
+type GeminiContent struct {
+	Role  string       `json:"role,omitempty"`
+	Parts []GeminiPart `json:"parts"`
+}
+
+type GeminiPart struct {
+	Text string `json:"text"`
 }
 
 type GeminiResponse struct {
@@ -67,19 +73,23 @@ func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOpti
 
 	// Create Gemini-specific request
 	geminiReq := GeminiRequest{
-		Contents: []struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		}{
+		Contents: []GeminiContent{
 			{
-				Parts: []struct {
-					Text string `json:"text"`
-				}{
+				Role: "user",
+				Parts: []GeminiPart{
 					{Text: prompt},
 				},
 			},
 		},
+	}
+
+	// Add system instruction if provided
+	if callCfg.SystemMsg != "" {
+		geminiReq.SystemInstruction = &GeminiContent{
+			Parts: []GeminiPart{
+				{Text: callCfg.SystemMsg},
+			},
+		}
 	}
 
 	// Add generation config if temperature or max tokens are set

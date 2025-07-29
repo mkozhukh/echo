@@ -18,11 +18,11 @@ func main() {
 	flag.Parse()
 
 	if flag.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: ec [--model provider/model] [--key api-key] \"message\"")
+		fmt.Fprintln(os.Stderr, "Usage: ec [--model provider/model] [--key api-key] message...")
 		os.Exit(1)
 	}
 
-	message := flag.Arg(0)
+	message := strings.Join(flag.Args(), " ")
 
 	if model == "" {
 		if envModel := os.Getenv("ECHO_MODEL"); envModel != "" {
