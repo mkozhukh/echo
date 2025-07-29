@@ -135,9 +135,6 @@ go install github.com/mkozhukh/echo/cmd/ec@latest
 ### Usage
 
 ```bash
-# Basic usage with default model (openai/gpt-4o-mini)
-ec "What is the capital of France?"
-
 # With specific model and key
 ec --model gemini/gemini-2.5-flash --key YOUR_KEY "Hello world"
 
@@ -145,6 +142,9 @@ ec --model gemini/gemini-2.5-flash --key YOUR_KEY "Hello world"
 export ECHO_MODEL=anthropic/claude-3-sonnet
 export ECHO_KEY=your-api-key
 ec "Explain quantum computing"
+
+# With custom system prompt
+ec --prompt "You are a helpful coding assistant" "Write a hello world in Go"
 ```
 
 ## License

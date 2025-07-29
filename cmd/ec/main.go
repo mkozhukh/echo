@@ -11,17 +11,18 @@ import (
 )
 
 func main() {
-	var model, key string
+	var model, key, prompt string
+	flag.StringVar(&prompt, "prompt", "", "Prompt to send to the model")
 	flag.StringVar(&model, "model", "", "Model in format provider/model-name")
 	flag.StringVar(&key, "key", "", "API key for the provider")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: ec [--model provider/model] [--key api-key] \"prompt\"")
+		fmt.Fprintln(os.Stderr, "Usage: ec [--model provider/model] [--key api-key] \"message\"")
 		os.Exit(1)
 	}
 
-	prompt := flag.Arg(0)
+	message := flag.Arg(0)
 
 	if model == "" {
 		if envModel := os.Getenv("ECHO_MODEL"); envModel != "" {
@@ -46,20 +47,25 @@ func main() {
 	var client echo.Client
 	var err error
 
+	options := make([]echo.CallOption, 0)
+	if prompt != "" {
+		options = append(options, echo.WithSystemMessage(prompt))
+	}
+
 	switch provider {
 	case "openai":
-		client = echo.NewOpenAIClient(key, modelName)
+		client = echo.NewOpenAIClient(key, modelName, options...)
 	case "anthropic":
-		client = echo.NewAnthropicClient(key, modelName)
+		client = echo.NewAnthropicClient(key, modelName, options...)
 	case "gemini":
-		client = echo.NewGeminiClient(key, modelName)
+		client = echo.NewGeminiClient(key, modelName, options...)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown provider: %s\n", provider)
 		os.Exit(1)
 	}
 
 	ctx := context.Background()
-	resp, err := client.Call(ctx, prompt)
+	resp, err := client.Call(ctx, message)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error calling LLM: %v\n", err)
 		os.Exit(1)
