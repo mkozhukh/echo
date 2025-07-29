@@ -122,6 +122,31 @@ resp, err := client.Call(ctx, "Write a story",
 - `WithSystemMessage(string)` - Override system message for this call
 
 
+## CLI Tool
+
+A simple command-line utility `ec` is included for quick testing. It's not the main feature of this library.
+
+### Installation
+
+```bash
+go install github.com/mkozhukh/echo/cmd/ec@latest
+```
+
+### Usage
+
+```bash
+# Basic usage with default model (openai/gpt-4o-mini)
+ec "What is the capital of France?"
+
+# With specific model and key
+ec --model gemini/gemini-2.5-flash --key YOUR_KEY "Hello world"
+
+# Using environment variables
+export ECHO_MODEL=anthropic/claude-3-sonnet
+export ECHO_KEY=your-api-key
+ec "Explain quantum computing"
+```
+
 ## License
 
 MIT

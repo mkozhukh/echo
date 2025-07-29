@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -32,7 +33,8 @@ func callHTTPAPI(ctx context.Context, url string, init RequestInit, body any, re
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status code: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	return json.NewDecoder(resp.Body).Decode(responsePtr)

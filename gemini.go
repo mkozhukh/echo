@@ -96,7 +96,7 @@ func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOpti
 	// Call the Gemini API using shared HTTP function
 	var response GeminiResponse
 	err := callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("x-goog-api-key", c.apiKey)
 	}, geminiReq, &response)
 	if err != nil {
 		return nil, fmt.Errorf("api call failed: %w", err)
