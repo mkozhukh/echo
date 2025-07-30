@@ -55,14 +55,6 @@ func NewGeminiClient(apiKey, model string, opts ...CallOption) *GeminiClient {
 	return &GeminiClient{apiKey: apiKey, cfg: cfg}
 }
 
-func NewGemini25Pro(apiKey string, opts ...CallOption) *GeminiClient {
-	return NewGeminiClient(apiKey, "gemini-2.5-pro", opts...)
-}
-
-func NewGemini25Flash(apiKey string, opts ...CallOption) *GeminiClient {
-	return NewGeminiClient(apiKey, "gemini-2.5-flash", opts...)
-}
-
 func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
 	// Start with client's default call config
 	callCfg := *c.cfg

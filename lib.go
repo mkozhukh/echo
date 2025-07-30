@@ -1,6 +1,25 @@
 package echo
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+)
+
+var modelAliases = map[string]string{
+	"openai/best":     "openai/gpt-4.1",
+	"openai/balanced": "openai/gpt-4.1-mini",
+	"openai/light":    "openai/gpt-4.1-nano",
+
+	"anthropic/best":     "anthropic/claude-opus-4-20250514",
+	"anthropic/balanced": "anthropic/claude-sonnet-4-20250514",
+	"anthropic/light":    "anthropic/claude-3-5-haiku-20241022",
+
+	"gemini/best":     "gemini/gemini-2.5-pro",
+	"gemini/balanced": "gemini/gemini-2.5-flash",
+	"gemini/light":    "gemini/gemini-2.5-flash",
+}
 
 // Client is the main interface for LLM operations
 type Client interface {
@@ -48,5 +67,47 @@ func WithSystemMessage(msg string) CallOption {
 func WithModel(model string) CallOption {
 	return func(cfg *CallConfig) {
 		cfg.Model = model
+	}
+}
+
+// NewClient creates a new LLM client based on provider/model string
+func NewClient(providerModel string, apiKey string, opts ...CallOption) (Client, error) {
+	if providerModel == "" {
+		providerModel = os.Getenv("ECHO_MODEL")
+	}
+
+	// resolve model name
+	resolvedName, ok := modelAliases[providerModel]
+	if ok {
+		providerModel = resolvedName
+	}
+
+	parts := strings.SplitN(providerModel, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid model format: %s. Expected provider/model-name", providerModel)
+	}
+
+	provider, modelName := parts[0], parts[1]
+
+	// Get API key from env if not provided
+	if apiKey == "" {
+		apiKey = os.Getenv("ECHO_KEY")
+	}
+
+	// look for more specialised env vars
+	if apiKey == "" {
+		envName := strings.ToUpper(provider) + "_API_KEY"
+		apiKey = os.Getenv(envName)
+	}
+
+	switch provider {
+	case "openai":
+		return NewOpenAIClient(apiKey, modelName, opts...), nil
+	case "anthropic":
+		return NewAnthropicClient(apiKey, modelName, opts...), nil
+	case "gemini":
+		return NewGeminiClient(apiKey, modelName, opts...), nil
+	default:
+		return nil, fmt.Errorf("unknown provider: %s", provider)
 	}
 }

@@ -51,19 +51,6 @@ func NewAnthropicClient(apiKey, model string, opts ...CallOption) *AnthropicClie
 	return &AnthropicClient{apiKey: apiKey, cfg: cfg}
 }
 
-// Convenience functions for common models
-func NewClaude4Opus(apiKey string, opts ...CallOption) *AnthropicClient {
-	return NewAnthropicClient(apiKey, "claude-opus-4-20250514", opts...)
-}
-
-func NewClaude4Sonnet(apiKey string, opts ...CallOption) *AnthropicClient {
-	return NewAnthropicClient(apiKey, "claude-sonnet-4-20250514", opts...)
-}
-
-func NewClaude35Haiku(apiKey string, opts ...CallOption) *AnthropicClient {
-	return NewAnthropicClient(apiKey, "claude-3-5-haiku-20241022", opts...)
-}
-
 func (c *AnthropicClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
 	// Start with client's default call config
 	callCfg := *c.cfg

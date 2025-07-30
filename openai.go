@@ -46,18 +46,6 @@ func NewOpenAIClient(apiKey, model string, opts ...CallOption) *OpenAIClient {
 	return &OpenAIClient{apiKey: apiKey, cfg: cfg}
 }
 
-func NewGPT41(apiKey string, opts ...CallOption) *OpenAIClient {
-	return NewOpenAIClient(apiKey, "gpt-4.1", opts...)
-}
-
-func NewGPT41Mini(apiKey string, opts ...CallOption) *OpenAIClient {
-	return NewOpenAIClient(apiKey, "gpt-4.1-mini", opts...)
-}
-
-func NewGPT41Nano(apiKey string, opts ...CallOption) *OpenAIClient {
-	return NewOpenAIClient(apiKey, "gpt-4.1-nano", opts...)
-}
-
 func (c *OpenAIClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
 	// Start with client's default call config
 	callCfg := *c.cfg

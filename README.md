@@ -5,9 +5,8 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 ## Supported Providers
 
 - OpenAI
+- Anthropic
 - Google Gemini
-- Anthropic (Claude)
-
 
 ## Installation
 
@@ -15,9 +14,11 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 go get github.com/mkozhukh/echo
 ``` 
 
-## Features
+## Quick Start
 
-### Simple Usage (Recommended)
+### Universal Client (Recommended)
+
+The `NewClient` function provides a unified way to create clients for any provider:
 
 ```go
 package main
@@ -31,25 +32,13 @@ import (
 func main() {
     ctx := context.Background()
 
-    // just API key
-    geminiClient := echo.NewGemini25Pro("your-gemini-api-key")
-    resp, err := geminiClient.Call(ctx, "Hello, how are you?")
+    // Create client with provider/model format
+    client, err := echo.NewClient("openai/gpt-4.1", "your-api-key")
     if err != nil {
         panic(err)
     }
-    fmt.Println(resp.Text)
-
-    // Anthropic example
-    claudeClient := echo.NewClaude3Sonnet("your-anthropic-api-key")
-    resp, err = claudeClient.Call(ctx, "Tell me a joke")
-    if err != nil {
-        panic(err)
-    }
-    fmt.Println(resp.Text)
-
-    // OpenAI GPT-4.1 example
-    gptClient := echo.NewGPT41("your-openai-api-key")
-    resp, err = gptClient.Call(ctx, "Explain quantum computing")
+    
+    resp, err := client.Call(ctx, "Hello, how are you?")
     if err != nil {
         panic(err)
     }
@@ -57,30 +46,59 @@ func main() {
 }
 ```
 
+### Model Aliases
+
+Use convenient aliases instead of full model names:
+
+```go
+// Quality tiers available for each provider:
+// - best: Highest quality model
+// - balanced: Good balance of quality and speed
+// - light: Fast and economical
+
+client, _ := echo.NewClient("openai/best", "")      // Uses gpt-4.1
+client, _ := echo.NewClient("anthropic/balanced", "") // Uses claude-sonnet-4
+client, _ := echo.NewClient("gemini/light", "")      // Uses gemini-2.5-flash
+```
+
+### Environment Variables
+
+The library supports flexible environment variable configuration:
+
+```go
+// Set default model and API key
+os.Setenv("ECHO_MODEL", "anthropic/balanced")
+os.Setenv("ECHO_KEY", "your-api-key")
+
+// Create client without parameters - uses env vars
+client, _ := echo.NewClient("", "")
+
+// Or use provider-specific API keys
+os.Setenv("OPENAI_API_KEY", "your-openai-key")
+os.Setenv("ANTHROPIC_API_KEY", "your-anthropic-key")
+os.Setenv("GEMINI_API_KEY", "your-gemini-key")
+
+// API key is automatically selected based on provider
+client, _ := echo.NewClient("openai/gpt-4.1", "")
+```
+
+## Options and Configuration
+
 ### Client Creation with Options
 
 ```go
 // Set defaults at client creation time
-creativeClient := echo.NewGemini25Pro("your-api-key",
+client, _ := echo.NewClient("gemini/best", "your-api-key",
     echo.WithSystemMessage("You are a creative assistant."),
-    echo.WithTemperature(0.8)
+    echo.WithTemperature(0.8),
 )
 
 // Use client defaults
-resp, err := creativeClient.Call(ctx, "Tell me a joke")
+resp, _ := client.Call(ctx, "Tell me a joke")
 
 // Override defaults for specific calls
-resp, err = creativeClient.Call(ctx, "Write a formal email",
+resp, _ = client.Call(ctx, "Write a formal email",
     echo.WithTemperature(0.2), // More deterministic
-)
-```
-
-### Custom Model with Options
-
-```go
-// Gemini with custom model
-client := echo.NewGeminiClient("your-api-key", "gemini-2.0-flash",
-    echo.WithClientSystemMessage("You are a helpful coding assistant."),
 )
 ```
 
@@ -94,57 +112,26 @@ resp, err := client.Call(ctx, "Write a story",
 )
 ```
 
-## API
-
-### OpenAI
-- `NewOpenAIClient(apiKey, model, opts...)`
-- `NewGPT41(apiKey, opts...)` - GPT-4.1
-- `NewGPT41Mini(apiKey, opts...)` - GPT-4.1 Mini
-- `NewGPT41Nano(apiKey, opts...)` - GPT-4.1 Nano
-
-### Gemini
-- `NewGeminiClient(apiKey, model, opts...)`
-- `NewGemini25Pro(apiKey, opts...)` - Gemini Pro
-- `NewGemini25Flash(apiKey, opts...)` - Gemini Flash
-
-### Anthropic
-- `NewAnthropicClient(apiKey, model, opts...)`
-- `NewClaude4Opus(apiKey, opts...)` - Claude 3 Opus
-- `NewClaude4Sonnet(apiKey, opts...)` - Claude 3.5 Sonnet
-- `NewClaude35Haiku(apiKey, opts...)` - Claude 3.5 Haiku
-
-
-### Option Functions
+### Available Options
 
 - `WithModel(string)` - Override model for this call
-- `WithTemperature(float64)` - Override temperature for this call
-- `WithMaxTokens(int)` - Override max tokens for this call
-- `WithSystemMessage(string)` - Override system message for this call
+- `WithTemperature(float64)` - Control randomness (0.0 - 1.0)
+- `WithMaxTokens(int)` - Limit response length
+- `WithSystemMessage(string)` - Set system prompt
 
+## Direct Provider Clients
 
-## CLI Tool
+For direct provider access, you can use provider-specific constructors:
 
-A simple command-line utility `ec` is included for quick testing. It's not the main feature of this library.
+```go
+// OpenAI
+client := echo.NewOpenAIClient("api-key", "gpt-4.1-mini")
 
-### Installation
+// Anthropic
+client := echo.NewAnthropicClient("api-key", "claude-opus-4-20250514")
 
-```bash
-go install github.com/mkozhukh/echo/cmd/ec@latest
-```
-
-### Usage
-
-```bash
-# With specific model and key
-ec --model gemini/gemini-2.5-flash --key YOUR_KEY "Hello world"
-
-# Using environment variables
-export ECHO_MODEL=anthropic/claude-3-sonnet
-export ECHO_KEY=your-api-key
-ec "Explain quantum computing"
-
-# With custom system prompt
-ec --prompt "You are a helpful coding assistant" "Write a hello world in Go"
+// Gemini
+client := echo.NewGeminiClient("api-key", "gemini-2.5-pro")
 ```
 
 ## License
