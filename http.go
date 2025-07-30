@@ -1,6 +1,7 @@
 package echo
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -67,4 +68,68 @@ func streamHTTPAPI(ctx context.Context, url string, init RequestInit, body any) 
 	}
 
 	return resp.Body, nil
+}
+
+// SSEMessage represents a parsed SSE message
+type SSEMessage struct {
+	Event string
+	Data  []byte
+}
+
+var eventPrefix = []byte("event: ")
+var dataPrefix = []byte("data: ")
+
+// parseSSEStream parses Server-Sent Events stream and calls handler for each complete message
+func parseSSEStream(respBody io.ReadCloser, handler func(SSEMessage) error) error {
+	defer respBody.Close()
+
+	var buffer bytes.Buffer
+	reader := bufio.NewReader(respBody)
+	var currentEvent string
+
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err == io.EOF {
+			// Process any remaining data in buffer
+			if buffer.Len() > 0 {
+				msg := SSEMessage{Event: currentEvent, Data: buffer.Bytes()}
+				if err := handler(msg); err != nil {
+					return err
+				}
+			}
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read error: %w", err)
+		}
+
+		// Check for double newline (message separator)
+		if bytes.Equal(bytes.TrimSpace(line), []byte("")) {
+			// End of message, process buffer contents if we have data
+			if buffer.Len() > 0 {
+				msg := SSEMessage{Event: currentEvent, Data: buffer.Bytes()}
+				if err := handler(msg); err != nil {
+					return err
+				}
+				buffer.Reset()
+				currentEvent = ""
+			}
+			continue
+		}
+
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+
+		// Parse SSE fields
+		if bytes.HasPrefix(line, eventPrefix) {
+			currentEvent = string(bytes.TrimPrefix(line, eventPrefix))
+		} else if bytes.HasPrefix(line, dataPrefix) {
+			data := bytes.TrimPrefix(line, dataPrefix)
+			buffer.Write(data)
+		}
+	}
+
+	return nil
 }

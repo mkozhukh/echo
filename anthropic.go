@@ -1,12 +1,9 @@
 package echo
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 )
 
@@ -212,152 +209,114 @@ func (c *AnthropicClient) StreamCall(ctx context.Context, prompt string, opts ..
 	// Start goroutine to process stream
 	go func() {
 		defer close(ch)
-		defer respBody.Close()
 
-		reader := bufio.NewReader(respBody)
 		var totalInputTokens, totalOutputTokens int
 
-		for {
-			line, err := reader.ReadBytes('\n')
-			if err == io.EOF {
-				break
+		err := parseSSEStream(respBody, func(msg SSEMessage) error {
+			return c.processAnthropicSSEMessage(msg, ch, &totalInputTokens, &totalOutputTokens)
+		})
+
+		if err != nil {
+			ch <- StreamChunk{Error: fmt.Errorf("SSE stream error: %w", err)}
+		}
+	}()
+
+	return &StreamResponse{Stream: ch}, nil
+}
+
+// processAnthropicSSEMessage processes individual Anthropic SSE messages
+func (c *AnthropicClient) processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputTokens, totalOutputTokens *int) error {
+	if len(msg.Data) == 0 {
+		return nil
+	}
+
+	// Handle different event types
+	switch msg.Event {
+	case "message_start":
+		var messageStart AnthropicMessageStart
+		if err := json.Unmarshal(msg.Data, &messageStart); err != nil {
+			return fmt.Errorf("json parse error for message_start: %w", err)
+		}
+		// Store initial token counts
+		*totalInputTokens = messageStart.Message.Usage.InputTokens
+		*totalOutputTokens = messageStart.Message.Usage.OutputTokens
+
+	case "content_block_start":
+		// Content block started, no action needed
+
+	case "content_block_delta":
+		var contentDelta AnthropicContentBlockDelta
+		if err := json.Unmarshal(msg.Data, &contentDelta); err != nil {
+			return fmt.Errorf("json parse error for content_block_delta: %w", err)
+		}
+		// Send the text delta
+		if contentDelta.Delta.Type == "text_delta" && contentDelta.Delta.Text != "" {
+			ch <- StreamChunk{
+				Data: []byte(contentDelta.Delta.Text),
 			}
-			if err != nil {
-				ch <- StreamChunk{Error: fmt.Errorf("read error: %w", err)}
-				return
-			}
+		}
 
-			// Skip empty lines
-			line = bytes.TrimSpace(line)
-			if len(line) == 0 {
-				continue
-			}
+	case "content_block_stop":
+		// Content block finished, no action needed
 
-			// Parse SSE format: "event: <event_type>" followed by "data: <json>"
-			var eventType string
-			var eventData []byte
+	case "message_delta":
+		var messageDelta AnthropicMessageDelta
+		if err := json.Unmarshal(msg.Data, &messageDelta); err != nil {
+			return fmt.Errorf("json parse error for message_delta: %w", err)
+		}
+		// Update output token count if provided
+		if messageDelta.Usage != nil {
+			*totalOutputTokens = messageDelta.Usage.OutputTokens
+		}
 
-			// Check for event line
-			if bytes.HasPrefix(line, []byte("event: ")) {
-				eventType = string(bytes.TrimPrefix(line, []byte("event: ")))
-				// Read the next line for data
-				dataLine, err := reader.ReadBytes('\n')
-				if err != nil {
-					if err != io.EOF {
-						ch <- StreamChunk{Error: fmt.Errorf("read data line error: %w", err)}
-						return
-					}
-					break
-				}
-				dataLine = bytes.TrimSpace(dataLine)
-				if bytes.HasPrefix(dataLine, []byte("data: ")) {
-					eventData = bytes.TrimPrefix(dataLine, []byte("data: "))
-				}
-			} else if bytes.HasPrefix(line, []byte("data: ")) {
-				// Sometimes just data without event type
-				eventData = bytes.TrimPrefix(line, []byte("data: "))
-			} else {
-				continue
-			}
+	case "message_stop":
+		// Send final metadata
+		meta := Metadata{
+			"input_tokens":  *totalInputTokens,
+			"output_tokens": *totalOutputTokens,
+		}
+		ch <- StreamChunk{
+			Meta: &meta,
+		}
 
-			if len(eventData) == 0 {
-				continue
-			}
+	case "ping":
+		// Ping event, ignore
 
-			// Handle different event types
-			switch eventType {
-			case "message_start":
-				var messageStart AnthropicMessageStart
-				if err := json.Unmarshal(eventData, &messageStart); err != nil {
-					ch <- StreamChunk{Error: fmt.Errorf("json parse error for message_start: %w", err)}
-					return
-				}
-				// Store initial token counts
-				totalInputTokens = messageStart.Message.Usage.InputTokens
-				totalOutputTokens = messageStart.Message.Usage.OutputTokens
+	default:
+		// Try to parse as generic event to handle cases without event type
+		var genericEvent AnthropicStreamEvent
+		if err := json.Unmarshal(msg.Data, &genericEvent); err != nil {
+			return nil // Skip unparseable events (not an error)
+		}
 
-			case "content_block_start":
-				// Content block started, no action needed
-
-			case "content_block_delta":
-				var contentDelta AnthropicContentBlockDelta
-				if err := json.Unmarshal(eventData, &contentDelta); err != nil {
-					ch <- StreamChunk{Error: fmt.Errorf("json parse error for content_block_delta: %w", err)}
-					return
-				}
-				// Send the text delta
+		// Handle based on type field in data
+		switch genericEvent.Type {
+		case "content_block_delta":
+			var contentDelta AnthropicContentBlockDelta
+			if err := json.Unmarshal(msg.Data, &contentDelta); err == nil {
 				if contentDelta.Delta.Type == "text_delta" && contentDelta.Delta.Text != "" {
 					ch <- StreamChunk{
 						Data: []byte(contentDelta.Delta.Text),
 					}
 				}
-
-			case "content_block_stop":
-				// Content block finished, no action needed
-
-			case "message_delta":
-				var messageDelta AnthropicMessageDelta
-				if err := json.Unmarshal(eventData, &messageDelta); err != nil {
-					ch <- StreamChunk{Error: fmt.Errorf("json parse error for message_delta: %w", err)}
-					return
-				}
-				// Update output token count if provided
+			}
+		case "message_delta":
+			var messageDelta AnthropicMessageDelta
+			if err := json.Unmarshal(msg.Data, &messageDelta); err == nil {
 				if messageDelta.Usage != nil {
-					totalOutputTokens = messageDelta.Usage.OutputTokens
-				}
-
-			case "message_stop":
-				// Send final metadata
-				meta := Metadata{
-					"input_tokens":  totalInputTokens,
-					"output_tokens": totalOutputTokens,
-				}
-				ch <- StreamChunk{
-					Meta: &meta,
-				}
-				return
-
-			case "ping":
-				// Ping event, ignore
-
-			default:
-				// Try to parse as generic event to handle cases without event type
-				var genericEvent AnthropicStreamEvent
-				if err := json.Unmarshal(eventData, &genericEvent); err != nil {
-					continue // Skip unparseable events
-				}
-
-				// Handle based on type field in data
-				switch genericEvent.Type {
-				case "content_block_delta":
-					var contentDelta AnthropicContentBlockDelta
-					if err := json.Unmarshal(eventData, &contentDelta); err == nil {
-						if contentDelta.Delta.Type == "text_delta" && contentDelta.Delta.Text != "" {
-							ch <- StreamChunk{
-								Data: []byte(contentDelta.Delta.Text),
-							}
-						}
-					}
-				case "message_delta":
-					var messageDelta AnthropicMessageDelta
-					if err := json.Unmarshal(eventData, &messageDelta); err == nil {
-						if messageDelta.Usage != nil {
-							totalOutputTokens = messageDelta.Usage.OutputTokens
-						}
-					}
-				case "message_stop":
-					meta := Metadata{
-						"input_tokens":  totalInputTokens,
-						"output_tokens": totalOutputTokens,
-					}
-					ch <- StreamChunk{
-						Meta: &meta,
-					}
-					return
+					*totalOutputTokens = messageDelta.Usage.OutputTokens
 				}
 			}
+		case "message_stop":
+			meta := Metadata{
+				"input_tokens":  *totalInputTokens,
+				"output_tokens": *totalOutputTokens,
+			}
+			ch <- StreamChunk{
+				Meta: &meta,
+			}
 		}
-	}()
+	}
 
-	return &StreamResponse{Stream: ch}, nil
+	return nil
 }

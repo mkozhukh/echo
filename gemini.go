@@ -1,12 +1,9 @@
 package echo
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
@@ -179,61 +176,29 @@ func (c *GeminiClient) StreamCall(ctx context.Context, prompt string, opts ...Ca
 	// Start goroutine to process stream
 	go func() {
 		defer close(ch)
-		defer respBody.Close()
 
-		var buffer bytes.Buffer
-		reader := bufio.NewReader(respBody)
+		err := parseSSEStream(respBody, func(msg SSEMessage) error {
+			c.processGeminiSSEMessage(msg, ch)
+			return nil
+		})
 
-		for {
-			line, err := reader.ReadBytes('\n')
-			if err == io.EOF {
-				// Process any remaining data in buffer
-				if buffer.Len() > 0 {
-					c.processSSEMessage(buffer.Bytes(), ch)
-				}
-				break
-			}
-			if err != nil {
-				ch <- StreamChunk{Error: fmt.Errorf("read error: %w", err)}
-				return
-			}
-
-			// Check for double newline (message separator)
-			if bytes.Equal(bytes.TrimSpace(line), []byte("")) {
-				// End of message, process buffer contents
-				if buffer.Len() > 0 {
-					c.processSSEMessage(buffer.Bytes(), ch)
-					buffer.Reset()
-				}
-				continue
-			}
-
-			// Add line to buffer
-			buffer.Write(line)
+		if err != nil {
+			ch <- StreamChunk{Error: fmt.Errorf("SSE stream error: %w", err)}
 		}
 	}()
 
 	return &StreamResponse{Stream: ch}, nil
 }
 
-// processSSEMessage processes a complete SSE message
-func (c *GeminiClient) processSSEMessage(message []byte, ch chan StreamChunk) {
-	message = bytes.TrimSpace(message)
-	if len(message) == 0 {
+// processGeminiSSEMessage processes individual Gemini SSE messages
+func (c *GeminiClient) processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
+	if len(msg.Data) == 0 {
 		return
 	}
-	
-	// Check for SSE data prefix
-	if !bytes.HasPrefix(message, []byte("data: ")) {
-		return
-	}
-
-	// Remove "data: " prefix
-	data := bytes.TrimPrefix(message, []byte("data: "))
 
 	// Parse JSON
 	var streamResp GeminiStreamResponse
-	if err := json.Unmarshal(data, &streamResp); err != nil {
+	if err := json.Unmarshal(msg.Data, &streamResp); err != nil {
 		ch <- StreamChunk{Error: fmt.Errorf("json parse error: %w", err)}
 		return
 	}
