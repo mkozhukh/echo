@@ -39,11 +39,19 @@ func main() {
 	}
 
 	ctx := context.Background()
-	resp, err := client.Call(ctx, message)
+	stream, err := client.StreamCall(ctx, message)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error calling LLM: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Print(resp.Text)
+	for chunk := range stream.Stream {
+		if chunk.Error != nil {
+			fmt.Fprintf(os.Stderr, "\nStream error: %v\n", chunk.Error)
+			os.Exit(1)
+		}
+		if chunk.Data != nil {
+			fmt.Print(string(chunk.Data))
+		}
+	}
 }

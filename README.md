@@ -119,6 +119,40 @@ resp, err := client.Call(ctx, "Write a story",
 - `WithMaxTokens(int)` - Limit response length
 - `WithSystemMessage(string)` - Set system prompt
 
+## Streaming Responses
+
+For real-time streaming of responses, use the `StreamCall` method:
+
+### Basic Streaming
+
+```go
+    streamResp, err := client.StreamCall(ctx, "Write a short story")
+    if err != nil {
+        panic(err)
+    }
+    
+    // Process streaming chunks
+    for chunk := range streamResp.Stream {
+        if chunk.Error != nil {
+            fmt.Printf("Error: %v\n", chunk.Error)
+            break
+        }
+        
+        // Print content as it arrives
+        if len(chunk.Data) > 0 {
+            fmt.Print(string(chunk.Data))
+        }
+    }
+}
+```
+
+### StreamCall vs Call
+
+- **`Call`**: Returns complete response after generation finishes
+- **`StreamCall`**: Returns chunks as they're generated for real-time display
+
+Both methods support the same options
+
 ## Direct Provider Clients
 
 For direct provider access, you can use provider-specific constructors:

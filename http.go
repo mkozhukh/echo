@@ -39,3 +39,32 @@ func callHTTPAPI(ctx context.Context, url string, init RequestInit, body any, re
 
 	return json.NewDecoder(resp.Body).Decode(responsePtr)
 }
+
+// streamHTTPAPI makes streaming HTTP requests and returns the response body
+func streamHTTPAPI(ctx context.Context, url string, init RequestInit, body any) (io.ReadCloser, error) {
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	init(req)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	return resp.Body, nil
+}

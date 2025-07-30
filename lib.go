@@ -25,12 +25,25 @@ var modelAliases = map[string]string{
 type Client interface {
 	// Call sends a prompt and returns the response
 	Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error)
+	StreamCall(ctx context.Context, prompt string, opts ...CallOption) (*StreamResponse, error)
 }
+
+type Metadata = map[string]any
 
 // Response represents the LLM response
 type Response struct {
-	Text     string         `json:"text"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Text     string   `json:"text"`
+	Metadata Metadata `json:"metadata,omitempty"`
+}
+
+type StreamChunk struct {
+	Data  []byte
+	Meta  *Metadata // Set on first chunk if available
+	Error error     // Set on error or completion
+}
+
+type StreamResponse struct {
+	Stream <-chan StreamChunk
 }
 
 // CallOption allows optional parameters for calls

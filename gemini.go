@@ -1,9 +1,14 @@
 package echo
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
 
 type GeminiClient struct {
@@ -38,6 +43,27 @@ type GeminiResponse struct {
 			} `json:"parts"`
 		} `json:"content"`
 	} `json:"candidates"`
+	UsageMetadata *struct {
+		PromptTokenCount     int `json:"promptTokenCount"`
+		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		TotalTokenCount      int `json:"totalTokenCount"`
+	} `json:"usageMetadata,omitempty"`
+}
+
+// GeminiStreamResponse represents a streaming response chunk from Gemini
+type GeminiStreamResponse struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+	UsageMetadata *struct {
+		PromptTokenCount     int `json:"promptTokenCount"`
+		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		TotalTokenCount      int `json:"totalTokenCount"`
+	} `json:"usageMetadata,omitempty"`
 }
 
 // NewGeminiClient creates a new Gemini client with full configuration
@@ -55,7 +81,8 @@ func NewGeminiClient(apiKey, model string, opts ...CallOption) *GeminiClient {
 	return &GeminiClient{apiKey: apiKey, cfg: cfg}
 }
 
-func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
+// prepareRequest builds the Gemini request with the given configuration
+func (c *GeminiClient) prepareRequest(prompt string, opts ...CallOption) (GeminiRequest, CallConfig) {
 	// Start with client's default call config
 	callCfg := *c.cfg
 	// Apply call-specific options (these override client defaults)
@@ -95,6 +122,12 @@ func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOpti
 		}
 	}
 
+	return geminiReq, callCfg
+}
+
+func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
+	geminiReq, callCfg := c.prepareRequest(prompt, opts...)
+
 	// Call the Gemini API using shared HTTP function
 	var response GeminiResponse
 	err := callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
@@ -112,5 +145,118 @@ func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOpti
 		return nil, fmt.Errorf("no content parts in Gemini response")
 	}
 
-	return &Response{Text: response.Candidates[0].Content.Parts[0].Text}, nil
+	result := &Response{Text: response.Candidates[0].Content.Parts[0].Text}
+
+	// Add metadata if usage information is available
+	if response.UsageMetadata != nil {
+		result.Metadata = Metadata{
+			"total_tokens":      response.UsageMetadata.TotalTokenCount,
+			"prompt_tokens":     response.UsageMetadata.PromptTokenCount,
+			"completion_tokens": response.UsageMetadata.CandidatesTokenCount,
+		}
+	}
+
+	return result, nil
+}
+
+func (c *GeminiClient) StreamCall(ctx context.Context, prompt string, opts ...CallOption) (*StreamResponse, error) {
+	geminiReq, callCfg := c.prepareRequest(prompt, opts...)
+
+	// Update URL for streaming endpoint
+	streamURL := strings.Replace(callCfg.BaseURL, ":generateContent", ":streamGenerateContent?alt=sse", 1)
+
+	// Get streaming response
+	respBody, err := streamHTTPAPI(ctx, streamURL, func(req *http.Request) {
+		req.Header.Set("x-goog-api-key", c.apiKey)
+	}, geminiReq)
+	if err != nil {
+		return nil, fmt.Errorf("Gemini streaming API call failed: %w", err)
+	}
+
+	// Create channel for streaming
+	ch := make(chan StreamChunk)
+
+	// Start goroutine to process stream
+	go func() {
+		defer close(ch)
+		defer respBody.Close()
+
+		var buffer bytes.Buffer
+		reader := bufio.NewReader(respBody)
+
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err == io.EOF {
+				// Process any remaining data in buffer
+				if buffer.Len() > 0 {
+					c.processSSEMessage(buffer.Bytes(), ch)
+				}
+				break
+			}
+			if err != nil {
+				ch <- StreamChunk{Error: fmt.Errorf("read error: %w", err)}
+				return
+			}
+
+			// Check for double newline (message separator)
+			if bytes.Equal(bytes.TrimSpace(line), []byte("")) {
+				// End of message, process buffer contents
+				if buffer.Len() > 0 {
+					c.processSSEMessage(buffer.Bytes(), ch)
+					buffer.Reset()
+				}
+				continue
+			}
+
+			// Add line to buffer
+			buffer.Write(line)
+		}
+	}()
+
+	return &StreamResponse{Stream: ch}, nil
+}
+
+// processSSEMessage processes a complete SSE message
+func (c *GeminiClient) processSSEMessage(message []byte, ch chan StreamChunk) {
+	message = bytes.TrimSpace(message)
+	if len(message) == 0 {
+		return
+	}
+	
+	// Check for SSE data prefix
+	if !bytes.HasPrefix(message, []byte("data: ")) {
+		return
+	}
+
+	// Remove "data: " prefix
+	data := bytes.TrimPrefix(message, []byte("data: "))
+
+	// Parse JSON
+	var streamResp GeminiStreamResponse
+	if err := json.Unmarshal(data, &streamResp); err != nil {
+		ch <- StreamChunk{Error: fmt.Errorf("json parse error: %w", err)}
+		return
+	}
+
+	// Check if we have candidates with content
+	if len(streamResp.Candidates) > 0 && len(streamResp.Candidates[0].Content.Parts) > 0 {
+		text := streamResp.Candidates[0].Content.Parts[0].Text
+		if text != "" {
+			ch <- StreamChunk{
+				Data: []byte(text),
+			}
+		}
+	}
+
+	// Check if this chunk contains usage metadata
+	if streamResp.UsageMetadata != nil {
+		meta := Metadata{
+			"total_tokens":      streamResp.UsageMetadata.TotalTokenCount,
+			"prompt_tokens":     streamResp.UsageMetadata.PromptTokenCount,
+			"completion_tokens": streamResp.UsageMetadata.CandidatesTokenCount,
+		}
+		ch <- StreamChunk{
+			Meta: &meta,
+		}
+	}
 }
