@@ -140,7 +140,7 @@ For real-time streaming of responses, use the `StreamCall` method:
         
         // Print content as it arrives
         if len(chunk.Data) > 0 {
-            fmt.Print(string(chunk.Data))
+            fmt.Print(chunk.Data)
         }
     }
 }

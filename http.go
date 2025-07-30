@@ -78,6 +78,8 @@ type SSEMessage struct {
 
 var eventPrefix = []byte("event: ")
 var dataPrefix = []byte("data: ")
+var doneMarker = []byte("[DONE]")
+var emptyLine = []byte("")
 
 // parseSSEStream parses Server-Sent Events stream and calls handler for each complete message
 func parseSSEStream(respBody io.ReadCloser, handler func(SSEMessage) error) error {
@@ -104,7 +106,7 @@ func parseSSEStream(respBody io.ReadCloser, handler func(SSEMessage) error) erro
 		}
 
 		// Check for double newline (message separator)
-		if bytes.Equal(bytes.TrimSpace(line), []byte("")) {
+		if bytes.Equal(bytes.TrimSpace(line), emptyLine) {
 			// End of message, process buffer contents if we have data
 			if buffer.Len() > 0 {
 				msg := SSEMessage{Event: currentEvent, Data: buffer.Bytes()}

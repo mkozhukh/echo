@@ -208,7 +208,7 @@ func (c *GeminiClient) processGeminiSSEMessage(msg SSEMessage, ch chan StreamChu
 		text := streamResp.Candidates[0].Content.Parts[0].Text
 		if text != "" {
 			ch <- StreamChunk{
-				Data: []byte(text),
+				Data: text,
 			}
 		}
 	}

@@ -151,6 +151,7 @@ type OpenAIStreamResponse struct {
 	} `json:"usage,omitempty"`
 }
 
+
 func (c *OpenAIClient) StreamCall(ctx context.Context, prompt string, opts ...CallOption) (*StreamResponse, error) {
 	body, callCfg := c.prepareRequest(prompt, true, opts...)
 
@@ -188,15 +189,15 @@ func (c *OpenAIClient) StreamCall(ctx context.Context, prompt string, opts ...Ca
 			}
 
 			// Check for SSE data prefix
-			if !bytes.HasPrefix(line, []byte("data: ")) {
+			if !bytes.HasPrefix(line, dataPrefix) {
 				continue
 			}
 
 			// Remove "data: " prefix
-			data := bytes.TrimPrefix(line, []byte("data: "))
+			data := bytes.TrimPrefix(line, dataPrefix)
 
 			// Check for end of stream
-			if string(data) == "[DONE]" {
+			if bytes.Equal(data, doneMarker) {
 				return
 			}
 
@@ -221,7 +222,7 @@ func (c *OpenAIClient) StreamCall(ctx context.Context, prompt string, opts ...Ca
 			} else if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.Content != "" {
 				// Normal content chunk
 				ch <- StreamChunk{
-					Data: []byte(streamResp.Choices[0].Delta.Content),
+					Data: streamResp.Choices[0].Delta.Content,
 				}
 			}
 		}

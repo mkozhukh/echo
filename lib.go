@@ -37,7 +37,7 @@ type Response struct {
 }
 
 type StreamChunk struct {
-	Data  []byte
+	Data  string
 	Meta  *Metadata // Set on first chunk if available
 	Error error     // Set on error or completion
 }

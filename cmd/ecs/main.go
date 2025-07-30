@@ -50,8 +50,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\nStream error: %v\n", chunk.Error)
 			os.Exit(1)
 		}
-		if chunk.Data != nil {
-			fmt.Print(string(chunk.Data))
+		if chunk.Data != "" {
+			fmt.Print(chunk.Data)
 		}
 	}
 }

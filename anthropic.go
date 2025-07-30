@@ -252,7 +252,7 @@ func (c *AnthropicClient) processAnthropicSSEMessage(msg SSEMessage, ch chan Str
 		// Send the text delta
 		if contentDelta.Delta.Type == "text_delta" && contentDelta.Delta.Text != "" {
 			ch <- StreamChunk{
-				Data: []byte(contentDelta.Delta.Text),
+				Data: contentDelta.Delta.Text,
 			}
 		}
 
@@ -296,7 +296,7 @@ func (c *AnthropicClient) processAnthropicSSEMessage(msg SSEMessage, ch chan Str
 			if err := json.Unmarshal(msg.Data, &contentDelta); err == nil {
 				if contentDelta.Delta.Type == "text_delta" && contentDelta.Delta.Text != "" {
 					ch <- StreamChunk{
-						Data: []byte(contentDelta.Delta.Text),
+						Data: contentDelta.Delta.Text,
 					}
 				}
 			}
