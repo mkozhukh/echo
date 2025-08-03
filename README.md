@@ -38,7 +38,8 @@ func main() {
         panic(err)
     }
     
-    resp, err := client.Call(ctx, "Hello, how are you?")
+    // Simple call using QuickMessage helper
+    resp, err := client.Call(ctx, echo.QuickMessage("Hello, how are you?"))
     if err != nil {
         panic(err)
     }
@@ -82,6 +83,39 @@ os.Setenv("GEMINI_API_KEY", "your-gemini-key")
 client, _ := echo.NewClient("openai/gpt-4.1", "")
 ```
 
+## Message Chains
+
+### Simple Messages
+
+For basic single-message prompts, use the `QuickMessage` helper:
+
+```go
+// Simple user message
+resp, _ := client.Call(ctx, echo.QuickMessage("Tell me a joke"))
+```
+
+### Complex Conversations
+
+For multi-turn conversations or system messages, use the full message syntax:
+
+```go
+// Full message chain with system prompt and conversation history
+messages := []echo.Message{
+    {Role: echo.System, Content: "You are a helpful math tutor."},
+    {Role: echo.User, Content: "What is 2+2?"},
+    {Role: echo.Agent, Content: "2+2 equals 4."},
+    {Role: echo.User, Content: "Can you explain why?"},
+}
+
+resp, err := client.Call(ctx, messages)
+```
+
+### Available Roles
+
+- `echo.System` - System instructions (must be first if present)
+- `echo.User` - User messages
+- `echo.Agent` - Assistant/model messages
+
 ## Options and Configuration
 
 ### Client Creation with Options
@@ -94,10 +128,10 @@ client, _ := echo.NewClient("gemini/best", "your-api-key",
 )
 
 // Use client defaults
-resp, _ := client.Call(ctx, "Tell me a joke")
+resp, _ := client.Call(ctx, echo.QuickMessage("Tell me a joke"))
 
 // Override defaults for specific calls
-resp, _ = client.Call(ctx, "Write a formal email",
+resp, _ = client.Call(ctx, echo.QuickMessage("Write a formal email"),
     echo.WithTemperature(0.2), // More deterministic
 )
 ```
@@ -105,7 +139,7 @@ resp, _ = client.Call(ctx, "Write a formal email",
 ### Per-Call Options
 
 ```go
-resp, err := client.Call(ctx, "Write a story",
+resp, err := client.Call(ctx, echo.QuickMessage("Write a story"),
     echo.WithTemperature(0.7),
     echo.WithMaxTokens(100),
     echo.WithSystemMessage("You are a creative writer."),
@@ -117,7 +151,7 @@ resp, err := client.Call(ctx, "Write a story",
 - `WithModel(string)` - Override model for this call
 - `WithTemperature(float64)` - Control randomness (0.0 - 1.0)
 - `WithMaxTokens(int)` - Limit response length
-- `WithSystemMessage(string)` - Set system prompt
+- `WithSystemMessage(string)` - Set or override system prompt (overrides any system message in the message chain)
 
 ## Streaming Responses
 
@@ -126,23 +160,9 @@ For real-time streaming of responses, use the `StreamCall` method:
 ### Basic Streaming
 
 ```go
-    streamResp, err := client.StreamCall(ctx, "Write a short story")
-    if err != nil {
-        panic(err)
-    }
-    
-    // Process streaming chunks
-    for chunk := range streamResp.Stream {
-        if chunk.Error != nil {
-            fmt.Printf("Error: %v\n", chunk.Error)
-            break
-        }
-        
-        // Print content as it arrives
-        if len(chunk.Data) > 0 {
-            fmt.Print(chunk.Data)
-        }
-    }
+streamResp, err := client.StreamCall(ctx, echo.QuickMessage("Write a short story"))
+if err != nil {
+    panic(err)
 }
 ```
 

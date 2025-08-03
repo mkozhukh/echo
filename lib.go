@@ -23,9 +23,9 @@ var modelAliases = map[string]string{
 
 // Client is the main interface for LLM operations
 type Client interface {
-	// Call sends a prompt and returns the response
-	Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error)
-	StreamCall(ctx context.Context, prompt string, opts ...CallOption) (*StreamResponse, error)
+	// Call sends a message chain and returns the response
+	Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error)
+	StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error)
 }
 
 type Metadata = map[string]any

@@ -118,7 +118,12 @@ func NewAnthropicClient(apiKey, model string, opts ...CallOption) *AnthropicClie
 }
 
 // prepareRequest builds the Anthropic request with the given configuration
-func (c *AnthropicClient) prepareRequest(prompt string, streaming bool, opts ...CallOption) (AnthropicRequest, CallConfig) {
+func (c *AnthropicClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (AnthropicRequest, CallConfig) {
+	// Validate messages
+	if err := validateMessages(messages); err != nil {
+		panic(fmt.Errorf("invalid message chain: %w", err))
+	}
+
 	// Start with client's default call config
 	callCfg := *c.cfg
 	// Apply call-specific options (these override client defaults)
@@ -126,12 +131,25 @@ func (c *AnthropicClient) prepareRequest(prompt string, streaming bool, opts ...
 		opt(&callCfg)
 	}
 
-	// Build messages array
-	messages := []AnthropicMessage{
-		{
-			Role:    "user",
-			Content: prompt,
-		},
+	// Convert messages to Anthropic format
+	anthropicMessages := []AnthropicMessage{}
+	var systemMsg string
+
+	for _, msg := range messages {
+		switch msg.Role {
+		case System:
+			systemMsg = msg.Content
+		case User:
+			anthropicMessages = append(anthropicMessages, AnthropicMessage{
+				Role:    "user",
+				Content: msg.Content,
+			})
+		case Agent:
+			anthropicMessages = append(anthropicMessages, AnthropicMessage{
+				Role:    "assistant",
+				Content: msg.Content,
+			})
+		}
 	}
 
 	// Anthropic requires max_tokens to be set
@@ -142,22 +160,24 @@ func (c *AnthropicClient) prepareRequest(prompt string, streaming bool, opts ...
 
 	body := AnthropicRequest{
 		Model:       callCfg.Model,
-		Messages:    messages,
+		Messages:    anthropicMessages,
 		MaxTokens:   maxTokens,
 		Temperature: callCfg.Temperature,
 		Stream:      streaming,
 	}
 
-	// Add system message if provided
+	// Handle system message - WithSystemMessage overrides message chain system
 	if callCfg.SystemMsg != "" {
 		body.System = callCfg.SystemMsg
+	} else if systemMsg != "" {
+		body.System = systemMsg
 	}
 
 	return body, callCfg
 }
 
-func (c *AnthropicClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
-	body, callCfg := c.prepareRequest(prompt, false, opts...)
+func (c *AnthropicClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
+	body, callCfg := c.prepareRequest(messages, false, opts...)
 
 	resp := AnthropicResponse{}
 	err := callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
@@ -191,8 +211,8 @@ func (c *AnthropicClient) Call(ctx context.Context, prompt string, opts ...CallO
 	}, nil
 }
 
-func (c *AnthropicClient) StreamCall(ctx context.Context, prompt string, opts ...CallOption) (*StreamResponse, error) {
-	body, callCfg := c.prepareRequest(prompt, true, opts...)
+func (c *AnthropicClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
+	body, callCfg := c.prepareRequest(messages, true, opts...)
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {

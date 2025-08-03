@@ -60,7 +60,12 @@ func NewOpenAIClient(apiKey, model string, opts ...CallOption) *OpenAIClient {
 }
 
 // prepareRequest builds the OpenAI request with the given configuration
-func (c *OpenAIClient) prepareRequest(prompt string, streaming bool, opts ...CallOption) (OpenAIRequest, CallConfig) {
+func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (OpenAIRequest, CallConfig) {
+	// Validate messages
+	if err := validateMessages(messages); err != nil {
+		panic(fmt.Errorf("invalid message chain: %w", err))
+	}
+
 	// Start with client's default call config
 	callCfg := *c.cfg
 	// Apply call-specific options (these override client defaults)
@@ -68,28 +73,55 @@ func (c *OpenAIClient) prepareRequest(prompt string, streaming bool, opts ...Cal
 		opt(&callCfg)
 	}
 
-	// Build messages array
-	messages := []OpenAIMessage{}
+	// Convert messages to OpenAI format
+	openaiMessages := []OpenAIMessage{}
+	systemMessageProcessed := false
 
-	// Add system message if provided
-	if callCfg.SystemMsg != "" {
-		messages = append(messages, OpenAIMessage{
-			Role:    "system",
-			Content: callCfg.SystemMsg,
-		})
+	for _, msg := range messages {
+		switch msg.Role {
+		case System:
+			// Skip system message here if WithSystemMessage is set
+			if callCfg.SystemMsg == "" {
+				openaiMessages = append(openaiMessages, OpenAIMessage{
+					Role:    "system",
+					Content: msg.Content,
+				})
+			}
+			systemMessageProcessed = true
+		case User:
+			openaiMessages = append(openaiMessages, OpenAIMessage{
+				Role:    "user",
+				Content: msg.Content,
+			})
+		case Agent:
+			openaiMessages = append(openaiMessages, OpenAIMessage{
+				Role:    "assistant",
+				Content: msg.Content,
+			})
+		}
 	}
 
-	// Add user message
-	messages = append(messages, OpenAIMessage{
-		Role:    "user",
-		Content: prompt,
-	})
+	// Handle WithSystemMessage option
+	if callCfg.SystemMsg != "" {
+		// Insert system message at the beginning
+		systemMsg := OpenAIMessage{
+			Role:    "system",
+			Content: callCfg.SystemMsg,
+		}
+		if systemMessageProcessed {
+			// Replace the first message (which should be system)
+			openaiMessages = append([]OpenAIMessage{systemMsg}, openaiMessages[1:]...)
+		} else {
+			// Add system message at the beginning
+			openaiMessages = append([]OpenAIMessage{systemMsg}, openaiMessages...)
+		}
+	}
 
 	req := OpenAIRequest{
 		Model:       callCfg.Model,
 		Temperature: callCfg.Temperature,
 		MaxTokens:   callCfg.MaxTokens,
-		Messages:    messages,
+		Messages:    openaiMessages,
 		Stream:      streaming,
 	}
 
@@ -105,8 +137,8 @@ func (c *OpenAIClient) prepareRequest(prompt string, streaming bool, opts ...Cal
 	return req, callCfg
 }
 
-func (c *OpenAIClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
-	body, callCfg := c.prepareRequest(prompt, false, opts...)
+func (c *OpenAIClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
+	body, callCfg := c.prepareRequest(messages, false, opts...)
 
 	resp := OpenAIResponse{}
 	err := callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
@@ -151,9 +183,8 @@ type OpenAIStreamResponse struct {
 	} `json:"usage,omitempty"`
 }
 
-
-func (c *OpenAIClient) StreamCall(ctx context.Context, prompt string, opts ...CallOption) (*StreamResponse, error) {
-	body, callCfg := c.prepareRequest(prompt, true, opts...)
+func (c *OpenAIClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
+	body, callCfg := c.prepareRequest(messages, true, opts...)
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {

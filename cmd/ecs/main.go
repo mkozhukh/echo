@@ -39,7 +39,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	stream, err := client.StreamCall(ctx, message)
+	stream, err := client.StreamCall(ctx, echo.QuickMessage(message))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error calling LLM: %v\n", err)
 		os.Exit(1)

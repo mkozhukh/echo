@@ -79,7 +79,12 @@ func NewGeminiClient(apiKey, model string, opts ...CallOption) *GeminiClient {
 }
 
 // prepareRequest builds the Gemini request with the given configuration
-func (c *GeminiClient) prepareRequest(prompt string, opts ...CallOption) (GeminiRequest, CallConfig) {
+func (c *GeminiClient) prepareRequest(messages []Message, opts ...CallOption) (GeminiRequest, CallConfig) {
+	// Validate messages
+	if err := validateMessages(messages); err != nil {
+		panic(fmt.Errorf("invalid message chain: %w", err))
+	}
+
 	// Start with client's default call config
 	callCfg := *c.cfg
 	// Apply call-specific options (these override client defaults)
@@ -87,23 +92,47 @@ func (c *GeminiClient) prepareRequest(prompt string, opts ...CallOption) (Gemini
 		opt(&callCfg)
 	}
 
-	// Create Gemini-specific request
-	geminiReq := GeminiRequest{
-		Contents: []GeminiContent{
-			{
+	// Convert messages to Gemini format
+	geminiContents := []GeminiContent{}
+	var systemMsg string
+
+	for _, msg := range messages {
+		switch msg.Role {
+		case System:
+			systemMsg = msg.Content
+		case User:
+			geminiContents = append(geminiContents, GeminiContent{
 				Role: "user",
 				Parts: []GeminiPart{
-					{Text: prompt},
+					{Text: msg.Content},
 				},
-			},
-		},
+			})
+		case Agent:
+			geminiContents = append(geminiContents, GeminiContent{
+				Role: "model",
+				Parts: []GeminiPart{
+					{Text: msg.Content},
+				},
+			})
+		}
 	}
 
-	// Add system instruction if provided
+	// Create Gemini-specific request
+	geminiReq := GeminiRequest{
+		Contents: geminiContents,
+	}
+
+	// Handle system instruction - WithSystemMessage overrides message chain system
 	if callCfg.SystemMsg != "" {
 		geminiReq.SystemInstruction = &GeminiContent{
 			Parts: []GeminiPart{
 				{Text: callCfg.SystemMsg},
+			},
+		}
+	} else if systemMsg != "" {
+		geminiReq.SystemInstruction = &GeminiContent{
+			Parts: []GeminiPart{
+				{Text: systemMsg},
 			},
 		}
 	}
@@ -122,8 +151,8 @@ func (c *GeminiClient) prepareRequest(prompt string, opts ...CallOption) (Gemini
 	return geminiReq, callCfg
 }
 
-func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOption) (*Response, error) {
-	geminiReq, callCfg := c.prepareRequest(prompt, opts...)
+func (c *GeminiClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
+	geminiReq, callCfg := c.prepareRequest(messages, opts...)
 
 	// Call the Gemini API using shared HTTP function
 	var response GeminiResponse
@@ -156,8 +185,8 @@ func (c *GeminiClient) Call(ctx context.Context, prompt string, opts ...CallOpti
 	return result, nil
 }
 
-func (c *GeminiClient) StreamCall(ctx context.Context, prompt string, opts ...CallOption) (*StreamResponse, error) {
-	geminiReq, callCfg := c.prepareRequest(prompt, opts...)
+func (c *GeminiClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
+	geminiReq, callCfg := c.prepareRequest(messages, opts...)
 
 	// Update URL for streaming endpoint
 	streamURL := strings.Replace(callCfg.BaseURL, ":generateContent", ":streamGenerateContent?alt=sse", 1)
