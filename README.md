@@ -85,36 +85,65 @@ client, _ := echo.NewClient("openai/gpt-4.1", "")
 
 ## Message Chains
 
-### Simple Messages
+The library supports three ways to create message chains for conversations:
 
-For basic single-message prompts, use the `QuickMessage` helper:
+### 1. QuickMessage - Simple Single Messages
+
+For basic single-message prompts:
 
 ```go
-// Simple user message
 resp, _ := client.Call(ctx, echo.QuickMessage("Tell me a joke"))
 ```
 
-### Complex Conversations
+### 2. TemplateMessage - Multi-Message Templates
 
-For multi-turn conversations or system messages, use the full message syntax:
+For readable multi-turn conversations using a text template:
 
 ```go
-// Full message chain with system prompt and conversation history
+messages := echo.TemplateMessage(`
+@system:
+You are a helpful math tutor.
+
+@user:
+What is 2+2?
+
+@agent:
+2+2 equals 4.
+
+@user:
+Can you explain why?
+`)
+
+resp, err := client.Call(ctx, messages)
+```
+
+Template format:
+- `@role:` markers separate messages (system, user, agent)
+- Content follows until the next marker or end of template
+- Content can be on the same line: `@user: Hello there!`
+- Multiline content is supported
+- Whitespace is automatically trimmed
+
+### 3. Manual Message Construction
+
+For programmatic message building:
+
+```go
 messages := []echo.Message{
-    {Role: echo.System, Content: "You are a helpful math tutor."},
-    {Role: echo.User, Content: "What is 2+2?"},
-    {Role: echo.Agent, Content: "2+2 equals 4."},
-    {Role: echo.User, Content: "Can you explain why?"},
+    {Role: echo.System, Content: "You are a helpful assistant."},
+    {Role: echo.User, Content: "Hello"},
+    {Role: echo.Agent, Content: "Hi! How can I help you today?"},
+    {Role: echo.User, Content: "What's the weather like?"},
 }
 
 resp, err := client.Call(ctx, messages)
 ```
 
-### Available Roles
+### Message Roles
 
-- `echo.System` - System instructions (must be first if present)
+- `echo.System` - System instructions (must be first if present, only one allowed)
 - `echo.User` - User messages
-- `echo.Agent` - Assistant/model messages
+- `echo.Agent` - Assistant/model messages (maps to "assistant" for OpenAI/Anthropic, "model" for Gemini)
 
 ## Options and Configuration
 
