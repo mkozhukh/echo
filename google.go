@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type GeminiClient struct {
+type GoogleClient struct {
 	apiKey string
 	cfg    *CallConfig
 }
@@ -63,8 +63,8 @@ type GeminiStreamResponse struct {
 	} `json:"usageMetadata,omitempty"`
 }
 
-// NewGeminiClient creates a new Gemini client with full configuration
-func NewGeminiClient(apiKey, model string, opts ...CallOption) *GeminiClient {
+// NewGoogleClient creates a new Google client with full configuration
+func NewGoogleClient(apiKey, model string, opts ...CallOption) *GoogleClient {
 	cfg := &CallConfig{
 		Model:   model,
 		BaseURL: "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
@@ -75,11 +75,11 @@ func NewGeminiClient(apiKey, model string, opts ...CallOption) *GeminiClient {
 		opt(cfg)
 	}
 
-	return &GeminiClient{apiKey: apiKey, cfg: cfg}
+	return &GoogleClient{apiKey: apiKey, cfg: cfg}
 }
 
 // prepareRequest builds the Gemini request with the given configuration
-func (c *GeminiClient) prepareRequest(messages []Message, opts ...CallOption) (GeminiRequest, CallConfig) {
+func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (GeminiRequest, CallConfig) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
 		panic(fmt.Errorf("invalid message chain: %w", err))
@@ -151,7 +151,7 @@ func (c *GeminiClient) prepareRequest(messages []Message, opts ...CallOption) (G
 	return geminiReq, callCfg
 }
 
-func (c *GeminiClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
+func (c *GoogleClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
 	geminiReq, callCfg := c.prepareRequest(messages, opts...)
 
 	// Call the Gemini API using shared HTTP function
@@ -185,7 +185,7 @@ func (c *GeminiClient) Call(ctx context.Context, messages []Message, opts ...Cal
 	return result, nil
 }
 
-func (c *GeminiClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
+func (c *GoogleClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
 	geminiReq, callCfg := c.prepareRequest(messages, opts...)
 
 	// Update URL for streaming endpoint
@@ -220,7 +220,7 @@ func (c *GeminiClient) StreamCall(ctx context.Context, messages []Message, opts 
 }
 
 // processGeminiSSEMessage processes individual Gemini SSE messages
-func (c *GeminiClient) processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
+func (c *GoogleClient) processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
 	if len(msg.Data) == 0 {
 		return
 	}

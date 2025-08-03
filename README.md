@@ -6,7 +6,7 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 
 - OpenAI
 - Anthropic
-- Google Gemini
+- Google
 
 ## Installation
 
@@ -59,7 +59,7 @@ Use convenient aliases instead of full model names:
 
 client, _ := echo.NewClient("openai/best", "")      // Uses gpt-4.1
 client, _ := echo.NewClient("anthropic/balanced", "") // Uses claude-sonnet-4
-client, _ := echo.NewClient("gemini/light", "")      // Uses gemini-2.5-flash
+client, _ := echo.NewClient("google/light", "")      // Uses gemini-2.5-flash
 ```
 
 ### Environment Variables
@@ -77,7 +77,7 @@ client, _ := echo.NewClient("", "")
 // Or use provider-specific API keys
 os.Setenv("OPENAI_API_KEY", "your-openai-key")
 os.Setenv("ANTHROPIC_API_KEY", "your-anthropic-key")
-os.Setenv("GEMINI_API_KEY", "your-gemini-key")
+os.Setenv("GOOGLE_API_KEY", "your-google-key")
 
 // API key is automatically selected based on provider
 client, _ := echo.NewClient("openai/gpt-4.1", "")
@@ -151,7 +151,7 @@ resp, err := client.Call(ctx, messages)
 
 ```go
 // Set defaults at client creation time
-client, _ := echo.NewClient("gemini/best", "your-api-key",
+client, _ := echo.NewClient("google/best", "your-api-key",
     echo.WithSystemMessage("You are a creative assistant."),
     echo.WithTemperature(0.8),
 )
@@ -213,8 +213,8 @@ client := echo.NewOpenAIClient("api-key", "gpt-4.1-mini")
 // Anthropic
 client := echo.NewAnthropicClient("api-key", "claude-opus-4-20250514")
 
-// Gemini
-client := echo.NewGeminiClient("api-key", "gemini-2.5-pro")
+// Google
+client := echo.NewGoogleClient("api-key", "gemini-2.5-pro")
 ```
 
 ## License

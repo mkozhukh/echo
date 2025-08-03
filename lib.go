@@ -16,9 +16,9 @@ var modelAliases = map[string]string{
 	"anthropic/balanced": "anthropic/claude-sonnet-4-20250514",
 	"anthropic/light":    "anthropic/claude-3-5-haiku-20241022",
 
-	"gemini/best":     "gemini/gemini-2.5-pro",
-	"gemini/balanced": "gemini/gemini-2.5-flash",
-	"gemini/light":    "gemini/gemini-2.5-flash",
+	"google/best":     "google/gemini-2.5-pro",
+	"google/balanced": "google/gemini-2.5-flash",
+	"google/light":    "google/gemini-2.5-flash",
 }
 
 // Client is the main interface for LLM operations
@@ -118,8 +118,8 @@ func NewClient(providerModel string, apiKey string, opts ...CallOption) (Client,
 		return NewOpenAIClient(apiKey, modelName, opts...), nil
 	case "anthropic":
 		return NewAnthropicClient(apiKey, modelName, opts...), nil
-	case "gemini":
-		return NewGeminiClient(apiKey, modelName, opts...), nil
+	case "google":
+		return NewGoogleClient(apiKey, modelName, opts...), nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", provider)
 	}
