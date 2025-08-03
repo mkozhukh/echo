@@ -83,6 +83,12 @@ func WithModel(model string) CallOption {
 	}
 }
 
+func WithBaseURL(url string) CallOption {
+	return func(cfg *CallConfig) {
+		cfg.BaseURL = url
+	}
+}
+
 // NewClient creates a new LLM client based on provider/model string
 func NewClient(providerModel string, apiKey string, opts ...CallOption) (Client, error) {
 	if providerModel == "" {
@@ -120,6 +126,9 @@ func NewClient(providerModel string, apiKey string, opts ...CallOption) (Client,
 		return NewAnthropicClient(apiKey, modelName, opts...), nil
 	case "google":
 		return NewGoogleClient(apiKey, modelName, opts...), nil
+	case "openrouter":
+		customOpts := append(opts, WithBaseURL("https://openrouter.ai/api/v1/chat/completions"))
+		return NewOpenAIClient(apiKey, modelName, customOpts...), nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", provider)
 	}

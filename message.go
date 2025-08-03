@@ -37,6 +37,7 @@ func validateMessages(messages []Message) error {
 	}
 
 	systemMessageSeen := false
+	userMessageSeen := false
 	for i, msg := range messages {
 		// Validate role
 		switch msg.Role {
@@ -55,9 +56,14 @@ func validateMessages(messages []Message) error {
 				return fmt.Errorf("only one system message allowed")
 			}
 			systemMessageSeen = true
+		} else {
+			userMessageSeen = true
 		}
 	}
 
+	if !userMessageSeen {
+		return fmt.Errorf("at least one non-system message is required")
+	}
 	return nil
 }
 

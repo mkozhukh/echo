@@ -7,6 +7,7 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 - OpenAI
 - Anthropic
 - Google
+- OpenRouter (via OpenAI-compatible API)
 
 ## Installation
 
@@ -181,6 +182,7 @@ resp, err := client.Call(ctx, echo.QuickMessage("Write a story"),
 - `WithTemperature(float64)` - Control randomness (0.0 - 1.0)
 - `WithMaxTokens(int)` - Limit response length
 - `WithSystemMessage(string)` - Set or override system prompt (overrides any system message in the message chain)
+- `WithBaseURL(string)` - Override the API base URL (useful for custom endpoints)
 
 ## Streaming Responses
 
@@ -215,6 +217,20 @@ client := echo.NewAnthropicClient("api-key", "claude-opus-4-20250514")
 
 // Google
 client := echo.NewGoogleClient("api-key", "gemini-2.5-pro")
+```
+
+### Using OpenRouter
+
+OpenRouter provides access to multiple LLM providers through a single API:
+
+```go
+// Use any OpenRouter model with the openrouter provider
+client, _ := echo.NewClient("openrouter/claude-3.5-sonnet", "your-openrouter-key")
+
+// Or create directly with custom options
+client := echo.NewOpenAIClient("your-openrouter-key", "claude-3.5-sonnet",
+    echo.WithBaseURL("https://openrouter.ai/api/v1/chat/completions"),
+)
 ```
 
 ## License

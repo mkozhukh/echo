@@ -2,6 +2,7 @@
 
 ## Nice to Have
 
+- For OpenRouter - define preffered provider
 - Error Handling Enhancement
   - HTTP error responses only show status codes, not error messages from APIs
   - Consider reading error response bodies for better debugging

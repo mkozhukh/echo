@@ -118,10 +118,10 @@ func NewAnthropicClient(apiKey, model string, opts ...CallOption) *AnthropicClie
 }
 
 // prepareRequest builds the Anthropic request with the given configuration
-func (c *AnthropicClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (AnthropicRequest, CallConfig) {
+func (c *AnthropicClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (AnthropicRequest, CallConfig, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		panic(fmt.Errorf("invalid message chain: %w", err))
+		return AnthropicRequest{}, CallConfig{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Start with client's default call config
@@ -173,14 +173,17 @@ func (c *AnthropicClient) prepareRequest(messages []Message, streaming bool, opt
 		body.System = systemMsg
 	}
 
-	return body, callCfg
+	return body, callCfg, nil
 }
 
 func (c *AnthropicClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	body, callCfg := c.prepareRequest(messages, false, opts...)
+	body, callCfg, err := c.prepareRequest(messages, false, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	resp := AnthropicResponse{}
-	err := callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
+	err = callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		req.Header.Set("x-api-key", c.apiKey)
 	}, body, &resp)
@@ -212,7 +215,10 @@ func (c *AnthropicClient) Call(ctx context.Context, messages []Message, opts ...
 }
 
 func (c *AnthropicClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	body, callCfg := c.prepareRequest(messages, true, opts...)
+	body, callCfg, err := c.prepareRequest(messages, true, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {

@@ -79,10 +79,10 @@ func NewGoogleClient(apiKey, model string, opts ...CallOption) *GoogleClient {
 }
 
 // prepareRequest builds the Gemini request with the given configuration
-func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (GeminiRequest, CallConfig) {
+func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (GeminiRequest, CallConfig, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		panic(fmt.Errorf("invalid message chain: %w", err))
+		return GeminiRequest{}, CallConfig{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Start with client's default call config
@@ -148,15 +148,18 @@ func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (G
 		}
 	}
 
-	return geminiReq, callCfg
+	return geminiReq, callCfg, nil
 }
 
 func (c *GoogleClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	geminiReq, callCfg := c.prepareRequest(messages, opts...)
+	geminiReq, callCfg, err := c.prepareRequest(messages, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	// Call the Gemini API using shared HTTP function
 	var response GeminiResponse
-	err := callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
+	err = callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
 		req.Header.Set("x-goog-api-key", c.apiKey)
 	}, geminiReq, &response)
 	if err != nil {
@@ -186,7 +189,10 @@ func (c *GoogleClient) Call(ctx context.Context, messages []Message, opts ...Cal
 }
 
 func (c *GoogleClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	geminiReq, callCfg := c.prepareRequest(messages, opts...)
+	geminiReq, callCfg, err := c.prepareRequest(messages, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	// Update URL for streaming endpoint
 	streamURL := strings.Replace(callCfg.BaseURL, ":generateContent", ":streamGenerateContent?alt=sse", 1)

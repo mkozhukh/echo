@@ -60,10 +60,10 @@ func NewOpenAIClient(apiKey, model string, opts ...CallOption) *OpenAIClient {
 }
 
 // prepareRequest builds the OpenAI request with the given configuration
-func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (OpenAIRequest, CallConfig) {
+func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (OpenAIRequest, CallConfig, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		panic(fmt.Errorf("invalid message chain: %w", err))
+		return OpenAIRequest{}, CallConfig{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Start with client's default call config
@@ -134,14 +134,17 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 		}
 	}
 
-	return req, callCfg
+	return req, callCfg, nil
 }
 
 func (c *OpenAIClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	body, callCfg := c.prepareRequest(messages, false, opts...)
+	body, callCfg, err := c.prepareRequest(messages, false, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	resp := OpenAIResponse{}
-	err := callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
+	err = callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}, body, &resp)
 	if err != nil {
@@ -184,7 +187,10 @@ type OpenAIStreamResponse struct {
 }
 
 func (c *OpenAIClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	body, callCfg := c.prepareRequest(messages, true, opts...)
+	body, callCfg, err := c.prepareRequest(messages, true, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
