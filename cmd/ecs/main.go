@@ -27,7 +27,8 @@ func main() {
 	var client echo.Client
 	var err error
 
-	options := make([]echo.CallOption, 0)
+	options := make([]echo.CallOption, 1)
+	options[0] = echo.WithMaxTokens(20000)
 	if prompt != "" {
 		options = append(options, echo.WithSystemMessage(prompt))
 	}

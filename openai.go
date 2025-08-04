@@ -8,11 +8,22 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type OpenAIMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+type OpenRouterProvider struct {
+	Order          []string `json:"only"`
+	AllowFallbacks bool     `json:"allow_fallbacks"`
+}
+
+type OpenAIError struct {
+	Message string `json:"message"`
+	Code    int32  `json:"code"`
 }
 
 type OpenAIRequest struct {
@@ -24,9 +35,11 @@ type OpenAIRequest struct {
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
+	Provider *OpenRouterProvider `json:"provider,omitempty"`
 }
 
 type OpenAIResponse struct {
+	Error   *OpenAIError `json:"error,omitempty"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -134,6 +147,15 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 		}
 	}
 
+	// Add provider field if EndPoint is set (for openrouter compatibility)
+	if callCfg.EndPoint != "" {
+		order := strings.Split(callCfg.EndPoint, ",")
+		req.Provider = &OpenRouterProvider{
+			Order:          order,
+			AllowFallbacks: false,
+		}
+	}
+
 	return req, callCfg, nil
 }
 
@@ -149,6 +171,11 @@ func (c *OpenAIClient) Call(ctx context.Context, messages []Message, opts ...Cal
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if resp.Error != nil {
+		return nil, fmt.Errorf("OpenAI API error: %s", resp.Error.Message)
 	}
 
 	// Extract text from LLM response

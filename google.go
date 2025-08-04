@@ -32,7 +32,14 @@ type GeminiPart struct {
 	Text string `json:"text"`
 }
 
+type GeminiError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Status  string `json:"status"`
+}
+
 type GeminiResponse struct {
+	Error      *GeminiError `json:"error,omitempty"`
 	Candidates []struct {
 		Content struct {
 			Parts []struct {
@@ -164,6 +171,11 @@ func (c *GoogleClient) Call(ctx context.Context, messages []Message, opts ...Cal
 	}, geminiReq, &response)
 	if err != nil {
 		return nil, fmt.Errorf("api call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if response.Error != nil {
+		return nil, fmt.Errorf("Gemini API error: %s", response.Error.Message)
 	}
 
 	if len(response.Candidates) == 0 {

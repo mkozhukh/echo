@@ -21,7 +21,13 @@ type AnthropicRequest struct {
 	Stream      bool               `json:"stream,omitempty"`
 }
 
+type AnthropicError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
 type AnthropicResponse struct {
+	Error   *AnthropicError `json:"error,omitempty"`
 	Content []struct {
 		Text string `json:"text"`
 		Type string `json:"type"`
@@ -189,6 +195,11 @@ func (c *AnthropicClient) Call(ctx context.Context, messages []Message, opts ...
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("api call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if resp.Error != nil {
+		return nil, fmt.Errorf("Anthropic API error: %s", resp.Error.Message)
 	}
 
 	// Extract text from response

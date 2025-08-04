@@ -183,6 +183,7 @@ resp, err := client.Call(ctx, echo.QuickMessage("Write a story"),
 - `WithMaxTokens(int)` - Limit response length
 - `WithSystemMessage(string)` - Set or override system prompt (overrides any system message in the message chain)
 - `WithBaseURL(string)` - Override the API base URL (useful for custom endpoints)
+- `WithEndPoint(string)` - Specify endpoint routing (primarily for OpenRouter provider selection)
 
 ## Streaming Responses
 
@@ -224,12 +225,23 @@ client := echo.NewGoogleClient("api-key", "gemini-2.5-pro")
 OpenRouter provides access to multiple LLM providers through a single API:
 
 ```go
-// Use any OpenRouter model with the openrouter provider
+// Basic usage with any OpenRouter model
 client, _ := echo.NewClient("openrouter/claude-3.5-sonnet", "your-openrouter-key")
+```
 
-// Or create directly with custom options
+you can specify which underlying provider infrastructure to use:
+
+```go
+// Specify provider routing with @ syntax in model name
+client, _ := echo.NewClient("openrouter/claude-3.5-sonnet@aws", "your-openrouter-key")
+
+// Multiple providers for fallback (comma-separated)
+client, _ := echo.NewClient("openrouter/gpt-4@azure,openai", "your-openrouter-key")
+
+// Direct creation with custom options
 client := echo.NewOpenAIClient("your-openrouter-key", "claude-3.5-sonnet",
     echo.WithBaseURL("https://openrouter.ai/api/v1/chat/completions"),
+    echo.WithEndPoint("aws,anthropic"), // Try AWS first, fallback to Anthropic
 )
 ```
 

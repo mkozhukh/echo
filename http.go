@@ -38,7 +38,13 @@ func callHTTPAPI(ctx context.Context, url string, init RequestInit, body any, re
 		return fmt.Errorf("status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	return json.NewDecoder(resp.Body).Decode(responsePtr)
+	err = json.NewDecoder(resp.Body).Decode(responsePtr)
+	if err != nil {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to decode response: %w, body: %s", err, string(body))
+	}
+
+	return nil
 }
 
 // streamHTTPAPI makes streaming HTTP requests and returns the response body

@@ -51,12 +51,13 @@ type CallOption func(*CallConfig)
 
 // CallConfig holds optional call parameters
 type CallConfig struct {
-	BaseURL string `json:"base_url,omitempty"`
-	Model   string `json:"model,omitempty"`
+	BaseURL  string
+	Model    string
+	EndPoint string
 
-	Temperature *float64 `json:"temperature,omitempty"`
-	MaxTokens   *int     `json:"max_tokens,omitempty"`
-	SystemMsg   string   `json:"system_message,omitempty"`
+	Temperature *float64
+	MaxTokens   *int
+	SystemMsg   string
 }
 
 func WithTemperature(temp float64) CallOption {
@@ -89,24 +90,37 @@ func WithBaseURL(url string) CallOption {
 	}
 }
 
+func WithEndPoint(endpoint string) CallOption {
+	return func(cfg *CallConfig) {
+		cfg.EndPoint = endpoint
+	}
+}
+
 // NewClient creates a new LLM client based on provider/model string
-func NewClient(providerModel string, apiKey string, opts ...CallOption) (Client, error) {
-	if providerModel == "" {
-		providerModel = os.Getenv("ECHO_MODEL")
+func NewClient(fullModelName string, apiKey string, opts ...CallOption) (Client, error) {
+	if fullModelName == "" {
+		fullModelName = os.Getenv("ECHO_MODEL")
 	}
 
 	// resolve model name
-	resolvedName, ok := modelAliases[providerModel]
+	resolvedName, ok := modelAliases[fullModelName]
 	if ok {
-		providerModel = resolvedName
+		fullModelName = resolvedName
 	}
 
-	parts := strings.SplitN(providerModel, "/", 2)
+	parts := strings.SplitN(fullModelName, "/", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid model format: %s. Expected provider/model-name", providerModel)
+		return nil, fmt.Errorf("invalid model format: %s. Expected provider/model-name@endpoint", fullModelName)
 	}
 
 	provider, modelName := parts[0], parts[1]
+	endpoint := ""
+
+	// Check if model name contains @ for provider override
+	if atIndex := strings.Index(modelName, "@"); atIndex != -1 {
+		endpoint = modelName[atIndex+1:]
+		modelName = modelName[:atIndex]
+	}
 
 	// Get API key from env if not provided
 	if apiKey == "" {
@@ -128,6 +142,9 @@ func NewClient(providerModel string, apiKey string, opts ...CallOption) (Client,
 		return NewGoogleClient(apiKey, modelName, opts...), nil
 	case "openrouter":
 		customOpts := append(opts, WithBaseURL("https://openrouter.ai/api/v1/chat/completions"))
+		if endpoint != "" {
+			customOpts = append(customOpts, WithEndPoint(endpoint))
+		}
 		return NewOpenAIClient(apiKey, modelName, customOpts...), nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", provider)
