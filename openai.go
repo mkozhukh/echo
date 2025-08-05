@@ -17,7 +17,8 @@ type OpenAIMessage struct {
 }
 
 type OpenRouterProvider struct {
-	Order          []string `json:"only"`
+	Order          []string `json:"order"`
+	Only           []string `json:"only"`
 	AllowFallbacks bool     `json:"allow_fallbacks"`
 }
 
@@ -151,8 +152,9 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 	if callCfg.EndPoint != "" {
 		order := strings.Split(callCfg.EndPoint, ",")
 		req.Provider = &OpenRouterProvider{
+			Only:           order,
 			Order:          order,
-			AllowFallbacks: false,
+			AllowFallbacks: true,
 		}
 	}
 
