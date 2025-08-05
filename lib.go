@@ -12,7 +12,7 @@ var modelAliases = map[string]string{
 	"openai/balanced": "openai/gpt-4.1-mini",
 	"openai/light":    "openai/gpt-4.1-nano",
 
-	"anthropic/best":     "anthropic/claude-opus-4-20250514",
+	"anthropic/best":     "anthropic/claude-opus-4-1-20250805",
 	"anthropic/balanced": "anthropic/claude-sonnet-4-20250514",
 	"anthropic/light":    "anthropic/claude-3-5-haiku-20241022",
 
