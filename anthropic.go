@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 )
 
 type AnthropicMessage struct {
@@ -104,38 +103,20 @@ type AnthropicPing struct {
 	Type string `json:"type"`
 }
 
-type AnthropicClient struct {
-	apiKey string
-	cfg    *CallConfig
+// anthropicProvider is a stateless provider for Anthropic API
+type anthropicProvider struct{}
+
+// NewAnthropicClient creates a new Anthropic client (deprecated, kept for compatibility)
+func NewAnthropicClient(apiKey, model string, opts ...CallOption) *CommonClient {
+	client, _ := NewCommonClient("anthropic/"+model, apiKey, opts...)
+	return client
 }
 
-// NewAnthropicClient creates a new Anthropic client with full configuration
-func NewAnthropicClient(apiKey, model string, opts ...CallOption) *AnthropicClient {
-	cfg := &CallConfig{
-		BaseURL: "https://api.anthropic.com/v1/messages",
-		Model:   model,
-	}
-
-	// Apply client options
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	return &AnthropicClient{apiKey: apiKey, cfg: cfg}
-}
-
-// prepareRequest builds the Anthropic request with the given configuration
-func (c *AnthropicClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (AnthropicRequest, CallConfig, error) {
+// prepareAnthropicRequest builds the Anthropic request with the given configuration
+func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig) (AnthropicRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return AnthropicRequest{}, CallConfig{}, fmt.Errorf("invalid message chain: %w", err)
-	}
-
-	// Start with client's default call config
-	callCfg := *c.cfg
-	// Apply call-specific options (these override client defaults)
-	for _, opt := range opts {
-		opt(&callCfg)
+		return AnthropicRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to Anthropic format
@@ -161,56 +142,45 @@ func (c *AnthropicClient) prepareRequest(messages []Message, streaming bool, opt
 
 	// Anthropic requires max_tokens to be set
 	maxTokens := 4096
-	if callCfg.MaxTokens != nil {
-		maxTokens = *callCfg.MaxTokens
+	if cfg.MaxTokens != nil {
+		maxTokens = *cfg.MaxTokens
 	}
 
 	body := AnthropicRequest{
-		Model:       callCfg.Model,
+		Model:       cfg.Model,
 		Messages:    anthropicMessages,
 		MaxTokens:   maxTokens,
-		Temperature: callCfg.Temperature,
+		Temperature: cfg.Temperature,
 		Stream:      streaming,
 	}
 
 	// Handle system message - WithSystemMessage overrides message chain system
-	if callCfg.SystemMsg != "" {
-		body.System = callCfg.SystemMsg
+	if cfg.SystemMsg != "" {
+		body.System = cfg.SystemMsg
 	} else if systemMsg != "" {
 		body.System = systemMsg
 	}
 
-	return body, callCfg, nil
+	return body, nil
 }
 
-var anthropicModelAliases = map[string]string{
-	"best":     "claude-opus-4-1-20250805",
-	"balanced": "claude-sonnet-4-20250514",
-	"light":    "claude-3-5-haiku-20241022",
-}
-
-// ResolveModel resolves the model name to the full model name
-func (c *AnthropicClient) ResolveModel(model string) (string, bool) {
-	model = strings.TrimPrefix(model, "anthropic/")
-	model, ok := anthropicModelAliases[model]
-
-	if !ok {
-		return anthropicModelAliases["light"], false
-	}
-
-	return model, true
-}
-
-func (c *AnthropicClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	body, callCfg, err := c.prepareRequest(messages, false, opts...)
+// call implements the provider interface for Anthropic
+func (p *anthropicProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
+	body, err := prepareAnthropicRequest(messages, false, cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com/v1/messages"
+	}
+
 	resp := AnthropicResponse{}
-	err = callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
+	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
-		req.Header.Set("x-api-key", c.apiKey)
+		req.Header.Set("x-api-key", apiKey)
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("api call failed: %w", err)
@@ -244,16 +214,23 @@ func (c *AnthropicClient) Call(ctx context.Context, messages []Message, opts ...
 	}, nil
 }
 
-func (c *AnthropicClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	body, callCfg, err := c.prepareRequest(messages, true, opts...)
+// streamCall implements the provider interface for Anthropic streaming
+func (p *anthropicProvider) streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error) {
+	body, err := prepareAnthropicRequest(messages, true, cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com/v1/messages"
+	}
+
 	// Get streaming response
-	respBody, err := streamHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
+	respBody, err := streamHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
-		req.Header.Set("x-api-key", c.apiKey)
+		req.Header.Set("x-api-key", apiKey)
 	}, body)
 	if err != nil {
 		return nil, fmt.Errorf("Anthropic streaming API call failed: %w", err)
@@ -269,7 +246,7 @@ func (c *AnthropicClient) StreamCall(ctx context.Context, messages []Message, op
 		var totalInputTokens, totalOutputTokens int
 
 		err := parseSSEStream(respBody, func(msg SSEMessage) error {
-			return c.processAnthropicSSEMessage(msg, ch, &totalInputTokens, &totalOutputTokens)
+			return processAnthropicSSEMessage(msg, ch, &totalInputTokens, &totalOutputTokens)
 		})
 
 		if err != nil {
@@ -281,7 +258,7 @@ func (c *AnthropicClient) StreamCall(ctx context.Context, messages []Message, op
 }
 
 // processAnthropicSSEMessage processes individual Anthropic SSE messages
-func (c *AnthropicClient) processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputTokens, totalOutputTokens *int) error {
+func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputTokens, totalOutputTokens *int) error {
 	if len(msg.Data) == 0 {
 		return nil
 	}

@@ -17,7 +17,7 @@ go get github.com/mkozhukh/echo
 
 ## Quick Start
 
-### Universal Client (Recommended)
+### Universal Client
 
 The `NewClient` function provides a unified way to create clients for any provider:
 
@@ -166,6 +166,28 @@ resp, _ = client.Call(ctx, echo.QuickMessage("Write a formal email"),
 )
 ```
 
+### Dynamic Provider Switching
+
+The library supports switching providers on a per-call basis using `WithModel`:
+
+```go
+// Create a client with a default provider
+client, _ := echo.NewClient("openai/gpt-4", "")
+
+// Use different providers for different calls
+resp1, _ := client.Call(ctx, echo.QuickMessage("Analyze this text"),
+    echo.WithModel("anthropic/claude-3.5-sonnet"), // Use Anthropic for analysis
+)
+
+resp2, _ := client.Call(ctx, echo.QuickMessage("Generate an image description"),
+    echo.WithModel("google/gemini-2.5-pro"), // Use Google for creative tasks
+)
+
+resp3, _ := client.Call(ctx, echo.QuickMessage("Quick calculation"),
+    echo.WithModel("openai/gpt-4.1-mini"), // Use a lighter model for simple tasks
+)
+```
+
 ### Per-Call Options
 
 ```go
@@ -205,21 +227,6 @@ if err != nil {
 
 Both methods support the same options
 
-## Direct Provider Clients
-
-For direct provider access, you can use provider-specific constructors:
-
-```go
-// OpenAI
-client := echo.NewOpenAIClient("api-key", "gpt-4.1-mini")
-
-// Anthropic
-client := echo.NewAnthropicClient("api-key", "claude-opus-4-20250514")
-
-// Google
-client := echo.NewGoogleClient("api-key", "gemini-2.5-pro")
-```
-
 ### Using OpenRouter
 
 OpenRouter provides access to multiple LLM providers through a single API:
@@ -237,12 +244,6 @@ client, _ := echo.NewClient("openrouter/claude-3.5-sonnet@aws", "your-openrouter
 
 // Multiple providers for fallback (comma-separated)
 client, _ := echo.NewClient("openrouter/gpt-4@azure,openai", "your-openrouter-key")
-
-// Direct creation with custom options
-client := echo.NewOpenAIClient("your-openrouter-key", "claude-3.5-sonnet",
-    echo.WithBaseURL("https://openrouter.ai/api/v1/chat/completions"),
-    echo.WithEndPoint("aws,anthropic"), // Try AWS first, fallback to Anthropic
-)
 ```
 
 ## License

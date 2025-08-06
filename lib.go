@@ -2,9 +2,6 @@ package echo
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"strings"
 )
 
 // Client is the main interface for LLM operations
@@ -84,51 +81,5 @@ func WithEndPoint(endpoint string) CallOption {
 
 // NewClient creates a new LLM client based on provider/model string
 func NewClient(fullModelName string, apiKey string, opts ...CallOption) (Client, error) {
-	if fullModelName == "" {
-		fullModelName = os.Getenv("ECHO_MODEL")
-	}
-
-	parts := strings.SplitN(fullModelName, "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid model format: %s. Expected provider/model-name@endpoint", fullModelName)
-	}
-
-	provider, modelName := parts[0], parts[1]
-	endpoint := ""
-
-	// Check if model name contains @ for provider override
-	if atIndex := strings.Index(modelName, "@"); atIndex != -1 {
-		endpoint = modelName[atIndex+1:]
-		modelName = modelName[:atIndex]
-	}
-
-	// Get API key from env if not provided
-	if apiKey == "" {
-		apiKey = os.Getenv("ECHO_KEY")
-	}
-
-	// look for more specialised env vars
-	if apiKey == "" {
-		envName := strings.ToUpper(provider) + "_API_KEY"
-		apiKey = os.Getenv(envName)
-	}
-
-	switch provider {
-	case "mock":
-		return NewMockClient(apiKey, modelName, opts...), nil
-	case "openai":
-		return NewOpenAIClient(apiKey, modelName, opts...), nil
-	case "anthropic":
-		return NewAnthropicClient(apiKey, modelName, opts...), nil
-	case "google":
-		return NewGoogleClient(apiKey, modelName, opts...), nil
-	case "openrouter":
-		customOpts := append(opts, WithBaseURL("https://openrouter.ai/api/v1/chat/completions"))
-		if endpoint != "" {
-			customOpts = append(customOpts, WithEndPoint(endpoint))
-		}
-		return NewOpenAIClient(apiKey, modelName, customOpts...), nil
-	default:
-		return nil, fmt.Errorf("unknown provider: %s", provider)
-	}
+	return NewCommonClient(fullModelName, apiKey, opts...)
 }

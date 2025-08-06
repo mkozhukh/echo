@@ -8,10 +8,8 @@ import (
 	"strings"
 )
 
-type GoogleClient struct {
-	apiKey string
-	cfg    *CallConfig
-}
+// googleProvider is a stateless provider for Google API
+type googleProvider struct{}
 
 // Gemini-specific request/response structures
 type GeminiRequest struct {
@@ -70,33 +68,17 @@ type GeminiStreamResponse struct {
 	} `json:"usageMetadata,omitempty"`
 }
 
-// NewGoogleClient creates a new Google client with full configuration
-func NewGoogleClient(apiKey, model string, opts ...CallOption) *GoogleClient {
-	cfg := &CallConfig{
-		Model:   model,
-		BaseURL: "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
-	}
-
-	// Apply client options
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	return &GoogleClient{apiKey: apiKey, cfg: cfg}
+// NewGoogleClient creates a new Google client (deprecated, kept for compatibility)
+func NewGoogleClient(apiKey, model string, opts ...CallOption) *CommonClient {
+	client, _ := NewCommonClient("google/"+model, apiKey, opts...)
+	return client
 }
 
-// prepareRequest builds the Gemini request with the given configuration
-func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (GeminiRequest, CallConfig, error) {
+// prepareGoogleRequest builds the Gemini request with the given configuration
+func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return GeminiRequest{}, CallConfig{}, fmt.Errorf("invalid message chain: %w", err)
-	}
-
-	// Start with client's default call config
-	callCfg := *c.cfg
-	// Apply call-specific options (these override client defaults)
-	for _, opt := range opts {
-		opt(&callCfg)
+		return GeminiRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to Gemini format
@@ -130,10 +112,10 @@ func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (G
 	}
 
 	// Handle system instruction - WithSystemMessage overrides message chain system
-	if callCfg.SystemMsg != "" {
+	if cfg.SystemMsg != "" {
 		geminiReq.SystemInstruction = &GeminiContent{
 			Parts: []GeminiPart{
-				{Text: callCfg.SystemMsg},
+				{Text: cfg.SystemMsg},
 			},
 		}
 	} else if systemMsg != "" {
@@ -145,47 +127,36 @@ func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (G
 	}
 
 	// Add generation config if temperature or max tokens are set
-	if callCfg.Temperature != nil || callCfg.MaxTokens != nil {
+	if cfg.Temperature != nil || cfg.MaxTokens != nil {
 		geminiReq.GenerationConfig = &struct {
 			Temperature     *float64 `json:"temperature,omitempty"`
 			MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 		}{
-			Temperature:     callCfg.Temperature,
-			MaxOutputTokens: callCfg.MaxTokens,
+			Temperature:     cfg.Temperature,
+			MaxOutputTokens: cfg.MaxTokens,
 		}
 	}
 
-	return geminiReq, callCfg, nil
+	return geminiReq, nil
 }
 
-var googleModelAliases = map[string]string{
-	"best":     "gpt-4.1",
-	"balanced": "gpt-4.1-mini",
-	"light":    "gpt-4.1-nano",
-}
-
-// ResolveModel resolves the model name to the full model name
-func (c *GoogleClient) ResolveModel(model string) (string, bool) {
-	model = strings.TrimPrefix(model, "google/")
-	model, ok := googleModelAliases[model]
-
-	if !ok {
-		return googleModelAliases["light"], false
-	}
-
-	return model, true
-}
-
-func (c *GoogleClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	geminiReq, callCfg, err := c.prepareRequest(messages, opts...)
+// call implements the provider interface for Google
+func (p *googleProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
+	geminiReq, err := prepareGoogleRequest(messages, cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build the base URL with model
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + cfg.Model + ":generateContent"
+	}
+
 	// Call the Gemini API using shared HTTP function
 	var response GeminiResponse
-	err = callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
-		req.Header.Set("x-goog-api-key", c.apiKey)
+	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
+		req.Header.Set("x-goog-api-key", apiKey)
 	}, geminiReq, &response)
 	if err != nil {
 		return nil, fmt.Errorf("api call failed: %w", err)
@@ -218,18 +189,25 @@ func (c *GoogleClient) Call(ctx context.Context, messages []Message, opts ...Cal
 	return result, nil
 }
 
-func (c *GoogleClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	geminiReq, callCfg, err := c.prepareRequest(messages, opts...)
+// streamCall implements the provider interface for Google streaming
+func (p *googleProvider) streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error) {
+	geminiReq, err := prepareGoogleRequest(messages, cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build the base URL with model
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + cfg.Model + ":generateContent"
+	}
+
 	// Update URL for streaming endpoint
-	streamURL := strings.Replace(callCfg.BaseURL, ":generateContent", ":streamGenerateContent?alt=sse", 1)
+	streamURL := strings.Replace(baseURL, ":generateContent", ":streamGenerateContent?alt=sse", 1)
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, streamURL, func(req *http.Request) {
-		req.Header.Set("x-goog-api-key", c.apiKey)
+		req.Header.Set("x-goog-api-key", apiKey)
 	}, geminiReq)
 	if err != nil {
 		return nil, fmt.Errorf("Gemini streaming API call failed: %w", err)
@@ -243,7 +221,7 @@ func (c *GoogleClient) StreamCall(ctx context.Context, messages []Message, opts 
 		defer close(ch)
 
 		err := parseSSEStream(respBody, func(msg SSEMessage) error {
-			c.processGeminiSSEMessage(msg, ch)
+			processGeminiSSEMessage(msg, ch)
 			return nil
 		})
 
@@ -256,7 +234,7 @@ func (c *GoogleClient) StreamCall(ctx context.Context, messages []Message, opts 
 }
 
 // processGeminiSSEMessage processes individual Gemini SSE messages
-func (c *GoogleClient) processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
+func processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
 	if len(msg.Data) == 0 {
 		return
 	}

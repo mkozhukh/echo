@@ -53,38 +53,20 @@ type OpenAIResponse struct {
 	} `json:"usage,omitempty"`
 }
 
-type OpenAIClient struct {
-	apiKey string
-	cfg    *CallConfig
+// openAIProvider is a stateless provider for OpenAI API
+type openAIProvider struct{}
+
+// NewOpenAIClient creates a new OpenAI client (deprecated, kept for compatibility)
+func NewOpenAIClient(apiKey, model string, opts ...CallOption) *CommonClient {
+	client, _ := NewCommonClient("openai/"+model, apiKey, opts...)
+	return client
 }
 
-// Convenience functions for easy client creation
-func NewOpenAIClient(apiKey, model string, opts ...CallOption) *OpenAIClient {
-	cfg := &CallConfig{
-		BaseURL: "https://api.openai.com/v1/chat/completions",
-		Model:   model,
-	}
-
-	// Apply client options
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	return &OpenAIClient{apiKey: apiKey, cfg: cfg}
-}
-
-// prepareRequest builds the OpenAI request with the given configuration
-func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts ...CallOption) (OpenAIRequest, CallConfig, error) {
+// prepareOpenAIRequest builds the OpenAI request with the given configuration
+func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (OpenAIRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return OpenAIRequest{}, CallConfig{}, fmt.Errorf("invalid message chain: %w", err)
-	}
-
-	// Start with client's default call config
-	callCfg := *c.cfg
-	// Apply call-specific options (these override client defaults)
-	for _, opt := range opts {
-		opt(&callCfg)
+		return OpenAIRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to OpenAI format
@@ -95,7 +77,7 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 		switch msg.Role {
 		case System:
 			// Skip system message here if WithSystemMessage is set
-			if callCfg.SystemMsg == "" {
+			if cfg.SystemMsg == "" {
 				openaiMessages = append(openaiMessages, OpenAIMessage{
 					Role:    "system",
 					Content: msg.Content,
@@ -116,11 +98,11 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 	}
 
 	// Handle WithSystemMessage option
-	if callCfg.SystemMsg != "" {
+	if cfg.SystemMsg != "" {
 		// Insert system message at the beginning
 		systemMsg := OpenAIMessage{
 			Role:    "system",
-			Content: callCfg.SystemMsg,
+			Content: cfg.SystemMsg,
 		}
 		if systemMessageProcessed {
 			// Replace the first message (which should be system)
@@ -132,9 +114,9 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 	}
 
 	req := OpenAIRequest{
-		Model:       callCfg.Model,
-		Temperature: callCfg.Temperature,
-		MaxTokens:   callCfg.MaxTokens,
+		Model:       cfg.Model,
+		Temperature: cfg.Temperature,
+		MaxTokens:   cfg.MaxTokens,
 		Messages:    openaiMessages,
 		Stream:      streaming,
 	}
@@ -149,8 +131,8 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 	}
 
 	// Add provider field if EndPoint is set (for openrouter compatibility)
-	if callCfg.EndPoint != "" {
-		order := strings.Split(callCfg.EndPoint, ",")
+	if cfg.EndPoint != "" {
+		order := strings.Split(cfg.EndPoint, ",")
 		req.Provider = &OpenRouterProvider{
 			Only:           order,
 			Order:          order,
@@ -158,36 +140,25 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 		}
 	}
 
-	return req, callCfg, nil
+	return req, nil
 }
 
-var openAIModelAliases = map[string]string{
-	"best":     "gpt-4.1",
-	"balanced": "gpt-4.1-mini",
-	"light":    "gpt-4.1-nano",
-}
-
-// ResolveModel resolves the model name to the full model name
-func (c *OpenAIClient) ResolveModel(model string) (string, bool) {
-	model = strings.TrimPrefix(model, "openai/")
-	model, ok := openAIModelAliases[model]
-
-	if !ok {
-		return openAIModelAliases["light"], false
-	}
-
-	return model, true
-}
-
-func (c *OpenAIClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	body, callCfg, err := c.prepareRequest(messages, false, opts...)
+// call implements the provider interface for OpenAI
+func (p *openAIProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
+	body, err := prepareOpenAIRequest(messages, false, cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1/chat/completions"
+	}
+
 	resp := OpenAIResponse{}
-	err = callHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
@@ -233,15 +204,22 @@ type OpenAIStreamResponse struct {
 	} `json:"usage,omitempty"`
 }
 
-func (c *OpenAIClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	body, callCfg, err := c.prepareRequest(messages, true, opts...)
+// streamCall implements the provider interface for OpenAI streaming
+func (p *openAIProvider) streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error) {
+	body, err := prepareOpenAIRequest(messages, true, cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1/chat/completions"
+	}
+
 	// Get streaming response
-	respBody, err := streamHTTPAPI(ctx, callCfg.BaseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	respBody, err := streamHTTPAPI(ctx, baseURL, func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}, body)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI streaming API call failed: %w", err)

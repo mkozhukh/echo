@@ -6,16 +6,17 @@ import (
 	"strings"
 )
 
-type MockClient struct {
-	// Mock client doesn't need any fields for basic functionality
+// mockProvider is a stateless provider for mock testing
+type mockProvider struct{}
+
+// NewMockClient creates a new mock client (deprecated, kept for compatibility)
+func NewMockClient(authKey, model string, opts ...CallOption) *CommonClient {
+	client, _ := NewCommonClient("mock/"+model, authKey, opts...)
+	return client
 }
 
-func NewMockClient(authKey, model string, opts ...CallOption) *MockClient {
-	return &MockClient{}
-}
-
-// Call implements the Client interface for regular (non-streaming) calls
-func (c *MockClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
+// call implements the provider interface for mock testing
+func (p *mockProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
 		return nil, fmt.Errorf("invalid message chain: %w", err)
@@ -39,8 +40,8 @@ func (c *MockClient) Call(ctx context.Context, messages []Message, opts ...CallO
 	}, nil
 }
 
-// StreamCall implements the Client interface for streaming calls
-func (c *MockClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
+// streamCall implements the provider interface for mock streaming
+func (p *mockProvider) streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
 		return nil, fmt.Errorf("invalid message chain: %w", err)
