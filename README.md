@@ -227,6 +227,19 @@ if err != nil {
 
 Both methods support the same options
 
+### Using in Tests
+
+The "mock" provider can be used for tests, it will return combined string of all incoming messages
+
+```
+client, _ := echo.NewClient("mock/any", "")
+mockResp, err := client.Call(ctx, echo.QuickMessage("test"))
+if err != nil {
+    panic(err)
+}
+// outputs: `[user]: test`
+```
+
 ### Using OpenRouter
 
 OpenRouter provides access to multiple LLM providers through a single API:

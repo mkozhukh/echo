@@ -9,12 +9,6 @@ import (
 // mockProvider is a stateless provider for mock testing
 type mockProvider struct{}
 
-// NewMockClient creates a new mock client (deprecated, kept for compatibility)
-func NewMockClient(authKey, model string, opts ...CallOption) *CommonClient {
-	client, _ := NewCommonClient("mock/"+model, authKey, opts...)
-	return client
-}
-
 // call implements the provider interface for mock testing
 func (p *mockProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
 	// Validate messages
