@@ -7,20 +7,6 @@ import (
 	"strings"
 )
 
-var modelAliases = map[string]string{
-	"openai/best":     "openai/gpt-4.1",
-	"openai/balanced": "openai/gpt-4.1-mini",
-	"openai/light":    "openai/gpt-4.1-nano",
-
-	"anthropic/best":     "anthropic/claude-opus-4-1-20250805",
-	"anthropic/balanced": "anthropic/claude-sonnet-4-20250514",
-	"anthropic/light":    "anthropic/claude-3-5-haiku-20241022",
-
-	"google/best":     "google/gemini-2.5-pro",
-	"google/balanced": "google/gemini-2.5-flash",
-	"google/light":    "google/gemini-2.5-flash",
-}
-
 // Client is the main interface for LLM operations
 type Client interface {
 	// Call sends a message chain and returns the response
@@ -102,12 +88,6 @@ func NewClient(fullModelName string, apiKey string, opts ...CallOption) (Client,
 		fullModelName = os.Getenv("ECHO_MODEL")
 	}
 
-	// resolve model name
-	resolvedName, ok := modelAliases[fullModelName]
-	if ok {
-		fullModelName = resolvedName
-	}
-
 	parts := strings.SplitN(fullModelName, "/", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid model format: %s. Expected provider/model-name@endpoint", fullModelName)
@@ -134,6 +114,8 @@ func NewClient(fullModelName string, apiKey string, opts ...CallOption) (Client,
 	}
 
 	switch provider {
+	case "mock":
+		return NewMockClient(apiKey, modelName, opts...), nil
 	case "openai":
 		return NewOpenAIClient(apiKey, modelName, opts...), nil
 	case "anthropic":

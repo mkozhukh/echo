@@ -161,6 +161,24 @@ func (c *OpenAIClient) prepareRequest(messages []Message, streaming bool, opts .
 	return req, callCfg, nil
 }
 
+var openAIModelAliases = map[string]string{
+	"best":     "gpt-4.1",
+	"balanced": "gpt-4.1-mini",
+	"light":    "gpt-4.1-nano",
+}
+
+// ResolveModel resolves the model name to the full model name
+func (c *OpenAIClient) ResolveModel(model string) (string, bool) {
+	model = strings.TrimPrefix(model, "openai/")
+	model, ok := openAIModelAliases[model]
+
+	if !ok {
+		return openAIModelAliases["light"], false
+	}
+
+	return model, true
+}
+
 func (c *OpenAIClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
 	body, callCfg, err := c.prepareRequest(messages, false, opts...)
 	if err != nil {

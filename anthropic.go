@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type AnthropicMessage struct {
@@ -180,6 +181,24 @@ func (c *AnthropicClient) prepareRequest(messages []Message, streaming bool, opt
 	}
 
 	return body, callCfg, nil
+}
+
+var anthropicModelAliases = map[string]string{
+	"best":     "claude-opus-4-1-20250805",
+	"balanced": "claude-sonnet-4-20250514",
+	"light":    "claude-3-5-haiku-20241022",
+}
+
+// ResolveModel resolves the model name to the full model name
+func (c *AnthropicClient) ResolveModel(model string) (string, bool) {
+	model = strings.TrimPrefix(model, "anthropic/")
+	model, ok := anthropicModelAliases[model]
+
+	if !ok {
+		return anthropicModelAliases["light"], false
+	}
+
+	return model, true
 }
 
 func (c *AnthropicClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {

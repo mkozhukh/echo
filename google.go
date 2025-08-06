@@ -158,6 +158,24 @@ func (c *GoogleClient) prepareRequest(messages []Message, opts ...CallOption) (G
 	return geminiReq, callCfg, nil
 }
 
+var googleModelAliases = map[string]string{
+	"best":     "gpt-4.1",
+	"balanced": "gpt-4.1-mini",
+	"light":    "gpt-4.1-nano",
+}
+
+// ResolveModel resolves the model name to the full model name
+func (c *GoogleClient) ResolveModel(model string) (string, bool) {
+	model = strings.TrimPrefix(model, "google/")
+	model, ok := googleModelAliases[model]
+
+	if !ok {
+		return googleModelAliases["light"], false
+	}
+
+	return model, true
+}
+
 func (c *GoogleClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
 	geminiReq, callCfg, err := c.prepareRequest(messages, opts...)
 	if err != nil {
