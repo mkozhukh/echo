@@ -9,11 +9,15 @@ import (
 // mockProvider is a stateless provider for mock testing
 type mockProvider struct{}
 
-// call implements the provider interface for mock testing
-func (p *mockProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
-	// Validate messages
-	if err := validateMessages(messages); err != nil {
-		return nil, fmt.Errorf("invalid message chain: %w", err)
+func (p *mockProvider) getMessages(messages []Message, cfg CallConfig) string {
+	if len(messages) > 0 && messages[0].Role == "system" {
+		if cfg.SystemMsg != "" {
+			messages[0].Content = cfg.SystemMsg
+		}
+	} else {
+		if cfg.SystemMsg != "" {
+			messages = append([]Message{{Role: "system", Content: cfg.SystemMsg}}, messages...)
+		}
 	}
 
 	// Combine all message content
@@ -25,8 +29,18 @@ func (p *mockProvider) call(ctx context.Context, apiKey string, messages []Messa
 		combinedContent.WriteString(fmt.Sprintf("[%s]: %s", msg.Role, msg.Content))
 	}
 
+	return combinedContent.String()
+}
+
+// call implements the provider interface for mock testing
+func (p *mockProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
+	// Validate messages
+	if err := validateMessages(messages); err != nil {
+		return nil, fmt.Errorf("invalid message chain: %w", err)
+	}
+
 	return &Response{
-		Text: combinedContent.String(),
+		Text: p.getMessages(messages, cfg),
 		Metadata: Metadata{
 			"mock":          true,
 			"message_count": len(messages),
@@ -39,15 +53,6 @@ func (p *mockProvider) streamCall(ctx context.Context, apiKey string, messages [
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
 		return nil, fmt.Errorf("invalid message chain: %w", err)
-	}
-
-	// Combine all message content
-	var combinedContent strings.Builder
-	for i, msg := range messages {
-		if i > 0 {
-			combinedContent.WriteString("\n")
-		}
-		combinedContent.WriteString(fmt.Sprintf("[%s]: %s", msg.Role, msg.Content))
 	}
 
 	// Create channel for streaming
@@ -66,7 +71,7 @@ func (p *mockProvider) streamCall(ctx context.Context, apiKey string, messages [
 		}
 
 		// Simulate streaming by sending the combined content in chunks
-		content := combinedContent.String()
+		content := p.getMessages(messages, cfg)
 		chunkSize := 10 // Send 10 characters at a time for simulation
 
 		for i := 0; i < len(content); i += chunkSize {

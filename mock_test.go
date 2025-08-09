@@ -7,7 +7,11 @@ import (
 )
 
 func TestMockClient_Call(t *testing.T) {
-	client := NewMockClient("", "mock")
+	client, err := NewClient("mock/test", "")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
 	ctx := context.Background()
 
 	tests := []struct {
@@ -65,7 +69,11 @@ func TestMockClient_Call(t *testing.T) {
 }
 
 func TestMockClient_StreamCall(t *testing.T) {
-	client := NewMockClient("", "mock")
+	client, err := NewClient("mock/test", "")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
 	ctx := context.Background()
 
 	messages := []Message{
@@ -120,11 +128,14 @@ func TestMockClient_StreamCall(t *testing.T) {
 }
 
 func TestMockClient_InvalidMessages(t *testing.T) {
-	client := NewMockClient("", "mock")
+	client, err := NewClient("mock/test", "")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
 	ctx := context.Background()
 
 	// Test empty messages
-	_, err := client.Call(ctx, []Message{})
+	_, err = client.Call(ctx, []Message{})
 	if err == nil {
 		t.Errorf("Expected error for empty messages")
 	}

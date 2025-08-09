@@ -171,9 +171,9 @@ func parseModelString(fullModelName string) (string, string, string, error) {
 
 // Model aliases for each provider
 var alises = map[string]string{
-	"openai/best":     "openai/gpt-4.1",
-	"openai/balanced": "openai/gpt-4.1-mini",
-	"openai/light":    "openai/gpt-4.1-nano",
+	"openai/best":     "openai/gpt-5",
+	"openai/balanced": "openai/gpt-5-mini",
+	"openai/light":    "openai/gpt-5-nano",
 
 	"anthropic/best":     "anthropic/claude-opus-4-1-20250805",
 	"anthropic/balanced": "anthropic/claude-sonnet-4-20250514",
@@ -183,7 +183,7 @@ var alises = map[string]string{
 	"google/balanced": "google/gemini-2.5-flash",
 	"google/light":    "google/gemini-2.5-flash",
 
-	"openrouter/best":     "openrouter/openai/gpt-4.1",
-	"openrouter/balanced": "openrouter/openai/gpt-4.1-mini",
-	"openrouter/light":    "openrouter/openai/gpt-4.1-nano",
+	"openrouter/best":     "openrouter/openai/gpt-5",
+	"openrouter/balanced": "openrouter/openai/gpt-5-mini",
+	"openrouter/light":    "openrouter/openai/gpt-5-nano",
 }

@@ -30,7 +30,7 @@ type OpenAIError struct {
 type OpenAIRequest struct {
 	Model         string          `json:"model"`
 	Temperature   *float64        `json:"temperature,omitempty"`
-	MaxTokens     *int            `json:"max_tokens,omitempty"`
+	MaxTokens     *int            `json:"max_completion_tokens,omitempty"`
 	Messages      []OpenAIMessage `json:"messages"`
 	Stream        bool            `json:"stream,omitempty"`
 	StreamOptions *struct {

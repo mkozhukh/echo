@@ -34,7 +34,7 @@ func main() {
     ctx := context.Background()
 
     // Create client with provider/model format
-    client, err := echo.NewClient("openai/gpt-4.1", "your-api-key")
+    client, err := echo.NewClient("openai/gpt-5", "your-api-key")
     if err != nil {
         panic(err)
     }
@@ -58,7 +58,7 @@ Use convenient aliases instead of full model names:
 // - balanced: Good balance of quality and speed
 // - light: Fast and economical
 
-client, _ := echo.NewClient("openai/best", "")      // Uses gpt-4.1
+client, _ := echo.NewClient("openai/best", "")      // Uses gpt-5
 client, _ := echo.NewClient("anthropic/balanced", "") // Uses claude-sonnet-4
 client, _ := echo.NewClient("google/light", "")      // Uses gemini-2.5-flash
 ```
@@ -81,7 +81,7 @@ os.Setenv("ANTHROPIC_API_KEY", "your-anthropic-key")
 os.Setenv("GOOGLE_API_KEY", "your-google-key")
 
 // API key is automatically selected based on provider
-client, _ := echo.NewClient("openai/gpt-4.1", "")
+client, _ := echo.NewClient("openai/gpt-5", "")
 ```
 
 ## Message Chains
@@ -184,7 +184,7 @@ resp2, _ := client.Call(ctx, echo.QuickMessage("Generate an image description"),
 )
 
 resp3, _ := client.Call(ctx, echo.QuickMessage("Quick calculation"),
-    echo.WithModel("openai/gpt-4.1-mini"), // Use a lighter model for simple tasks
+    echo.WithModel("openai/gpt-5-mini"), // Use a lighter model for simple tasks
 )
 ```
 
