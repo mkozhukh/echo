@@ -353,3 +353,9 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 
 	return nil
 }
+
+// getEmbeddings implements the provider interface for Anthropic
+// Note: Anthropic does not currently support embeddings API
+func (p *anthropicProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+	return nil, fmt.Errorf("Anthropic does not support embeddings API")
+}

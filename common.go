@@ -11,6 +11,7 @@ import (
 type provider interface {
 	call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error)
 	streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error)
+	getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error)
 }
 
 // CommonClient is the main client that delegates to appropriate providers
@@ -111,6 +112,15 @@ func (c *CommonClient) StreamCall(ctx context.Context, messages []Message, opts 
 		return nil, err
 	}
 	return p.streamCall(ctx, apiKey, messages, cfg)
+}
+
+// GetEmbeddings implements the Client interface
+func (c *CommonClient) GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error) {
+	p, apiKey, cfg, err := c.prepareCall(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.getEmbeddings(ctx, apiKey, text, cfg)
 }
 
 func (c *CommonClient) resolveAPIKey(apiKey string, providerName string) string {
