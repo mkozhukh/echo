@@ -53,6 +53,7 @@ func NewCommonClient(fullModelName string, apiKey string, opts ...CallOption) (*
 			"google":     &googleProvider{},
 			"mock":       &mockProvider{},
 			"openrouter": &openAIProvider{}, // OpenRouter uses OpenAI API
+			"voyage":     &voyageProvider{}, // Voyage AI - embeddings only
 		},
 	}
 
@@ -196,4 +197,8 @@ var alises = map[string]string{
 	"openrouter/best":     "openrouter/openai/gpt-5",
 	"openrouter/balanced": "openrouter/openai/gpt-5-mini",
 	"openrouter/light":    "openrouter/openai/gpt-5-nano",
+
+	"voyage/best":     "voyage/voyage-3",
+	"voyage/balanced": "voyage/voyage-3-lite",
+	"voyage/light":    "voyage/voyage-3-lite",
 }
