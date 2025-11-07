@@ -365,3 +365,193 @@ func (p *anthropicProvider) getEmbeddings(ctx context.Context, apiKey string, te
 func (p *anthropicProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("Anthropic does not support reranking API")
 }
+
+// parseCompletionRequest parses an HTTP request into a CompletionRequest
+// Converts from Anthropic format to OpenAI-compatible format
+func (p *anthropicProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+	var anthropicReq AnthropicRequest
+	if err := json.NewDecoder(req.Body).Decode(&anthropicReq); err != nil {
+		return nil, fmt.Errorf("failed to parse Anthropic completion request: %w", err)
+	}
+
+	// Convert Anthropic messages to OpenAI format
+	messages := make([]OpenAIMessage, 0, len(anthropicReq.Messages)+1)
+
+	// Add system message as first message if present
+	if anthropicReq.System != "" {
+		messages = append(messages, OpenAIMessage{
+			Role:    "system",
+			Content: anthropicReq.System,
+		})
+	}
+
+	// Convert user/assistant messages
+	for _, msg := range anthropicReq.Messages {
+		messages = append(messages, OpenAIMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+
+	// Convert max_tokens to OpenAI format
+	var maxTokens *int
+	if anthropicReq.MaxTokens > 0 {
+		maxTokens = &anthropicReq.MaxTokens
+	}
+
+	completionReq := &CompletionRequest{
+		Model:       anthropicReq.Model,
+		Temperature: anthropicReq.Temperature,
+		MaxTokens:   maxTokens,
+		Messages:    messages,
+		Stream:      anthropicReq.Stream,
+	}
+
+	if anthropicReq.Stream {
+		completionReq.StreamOptions = &struct {
+			IncludeUsage bool `json:"include_usage"`
+		}{
+			IncludeUsage: true,
+		}
+	}
+
+	return completionReq, nil
+}
+
+// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
+// Anthropic does not support embeddings, so this returns an error
+func (p *anthropicProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+	return nil, fmt.Errorf("Anthropic does not support embeddings API")
+}
+
+// parseRerankRequest parses an HTTP request into a RerankRequest
+// Anthropic does not support reranking, so this returns an error
+func (p *anthropicProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
+	return nil, fmt.Errorf("Anthropic does not support reranking API")
+}
+
+// buildCompletionRequest builds and executes a completion request, returning a unified response
+func (p *anthropicProvider) buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
+	// Convert CompletionRequest to AnthropicRequest
+	anthropicReq := AnthropicRequest{
+		Model:       req.Model,
+		Temperature: req.Temperature,
+		MaxTokens:   4096, // Default
+		Stream:      req.Stream,
+	}
+
+	// Override max tokens if provided
+	if req.MaxTokens != nil {
+		anthropicReq.MaxTokens = *req.MaxTokens
+	}
+
+	// Convert messages
+	var systemMsg string
+	anthropicReq.Messages = make([]AnthropicMessage, 0, len(req.Messages))
+	for _, msg := range req.Messages {
+		if msg.Role == "system" {
+			systemMsg = msg.Content
+		} else {
+			anthropicReq.Messages = append(anthropicReq.Messages, AnthropicMessage{
+				Role:    msg.Role, // "user" or "assistant"
+				Content: msg.Content,
+			})
+		}
+	}
+	if systemMsg != "" {
+		anthropicReq.System = systemMsg
+	}
+
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com/v1/messages"
+	}
+
+	// Make the API call
+	var anthropicResp AnthropicResponse
+	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
+		httpReq.Header.Set("anthropic-version", "2023-06-01")
+		httpReq.Header.Set("x-api-key", apiKey)
+	}, anthropicReq, &anthropicResp)
+	if err != nil {
+		return nil, fmt.Errorf("Anthropic API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if anthropicResp.Error != nil {
+		return nil, fmt.Errorf("Anthropic API error: %s", anthropicResp.Error.Message)
+	}
+
+	// Convert to unified CompletionResponse
+	completionResp := &CompletionResponse{
+		ID:      "",
+		Object:  "chat.completion",
+		Created: 0,
+		Model:   req.Model,
+		Choices: make([]struct {
+			Index   int `json:"index"`
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason,omitempty"`
+		}, 1),
+	}
+
+	// Combine all text content
+	var text string
+	for _, content := range anthropicResp.Content {
+		if content.Type == "text" {
+			text += content.Text
+		}
+	}
+
+	completionResp.Choices[0].Index = 0
+	completionResp.Choices[0].Message.Role = "assistant"
+	completionResp.Choices[0].Message.Content = text
+	completionResp.Choices[0].FinishReason = anthropicResp.StopReason
+
+	// Add usage information
+	completionResp.Usage = &struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	}{
+		PromptTokens:     anthropicResp.Usage.InputTokens,
+		CompletionTokens: anthropicResp.Usage.OutputTokens,
+		TotalTokens:      anthropicResp.Usage.InputTokens + anthropicResp.Usage.OutputTokens,
+	}
+
+	return completionResp, nil
+}
+
+// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
+// Anthropic does not support embeddings, so this returns an error
+func (p *anthropicProvider) buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
+	return nil, fmt.Errorf("Anthropic does not support embeddings API")
+}
+
+// buildRerankRequest builds and executes a reranking request, returning a unified response
+// Anthropic does not support reranking, so this returns an error
+func (p *anthropicProvider) buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
+	return nil, fmt.Errorf("Anthropic does not support reranking API")
+}
+
+// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
+func (p *anthropicProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp)
+}
+
+// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
+// Anthropic does not support embeddings, so this returns an error
+func (p *anthropicProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
+	return fmt.Errorf("Anthropic does not support embeddings API")
+}
+
+// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
+// Anthropic does not support reranking, so this returns an error
+func (p *anthropicProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
+	return fmt.Errorf("Anthropic does not support reranking API")
+}

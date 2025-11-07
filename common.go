@@ -3,6 +3,7 @@ package echo
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 )
@@ -13,6 +14,21 @@ type provider interface {
 	streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error)
 	getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error)
 	reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
+
+	// Parse HTTP requests into unified request structures
+	parseCompletionRequest(req *http.Request) (*CompletionRequest, error)
+	parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error)
+	parseRerankRequest(req *http.Request) (*RerankRequest, error)
+
+	// Build methods - consume parsed requests and return unified responses
+	buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error)
+	buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error)
+	buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error)
+
+	// Write methods - write unified responses back as HTTP responses
+	writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error
+	writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error
+	writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error
 }
 
 // CommonClient is the main client that delegates to appropriate providers

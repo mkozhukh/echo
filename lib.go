@@ -45,6 +45,100 @@ type RerankResponse struct {
 	Metadata Metadata  `json:"metadata,omitempty"`
 }
 
+// Unified request structures for parsing HTTP requests
+// Using OpenAI format as the common format to minimize data copying
+
+// CompletionRequest represents a unified completion request
+// Based on OpenAI's chat completion format
+type CompletionRequest struct {
+	Model         string          `json:"model"`
+	Temperature   *float64        `json:"temperature,omitempty"`
+	MaxTokens     *int            `json:"max_completion_tokens,omitempty"`
+	Messages      []OpenAIMessage `json:"messages"`
+	Stream        bool            `json:"stream,omitempty"`
+	StreamOptions *struct {
+		IncludeUsage bool `json:"include_usage"`
+	} `json:"stream_options,omitempty"`
+}
+
+// OpenAIMessage represents a message in OpenAI format
+type OpenAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// EmbeddingRequest represents a unified embedding request
+// Based on OpenAI's embedding format
+type EmbeddingRequest struct {
+	Model string `json:"model"`
+	Input string `json:"input"`
+}
+
+// RerankRequest represents a unified reranking request
+// Based on Voyage AI's rerank format
+type RerankRequest struct {
+	Query      string   `json:"query"`
+	Documents  []string `json:"documents"`
+	Model      string   `json:"model"`
+	TopK       *int     `json:"top_k,omitempty"`
+	Truncation *bool    `json:"truncation,omitempty"`
+}
+
+// Unified response structures for Build methods
+// Using OpenAI format as the common format to minimize data copying
+
+// CompletionResponse represents a unified completion response
+// Based on OpenAI's chat completion format
+type CompletionResponse struct {
+	ID      string `json:"id,omitempty"`
+	Object  string `json:"object,omitempty"`
+	Created int64  `json:"created,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Choices []struct {
+		Index   int `json:"index"`
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason,omitempty"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
+}
+
+// UnifiedEmbeddingResponse represents a unified embedding response
+// Based on OpenAI's embedding format
+type UnifiedEmbeddingResponse struct {
+	Object string `json:"object,omitempty"`
+	Data   []struct {
+		Object    string    `json:"object,omitempty"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Model string `json:"model,omitempty"`
+	Usage *struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
+}
+
+// UnifiedRerankResponse represents a unified reranking response
+// Based on Voyage AI's rerank format
+type UnifiedRerankResponse struct {
+	Results []struct {
+		Index          int     `json:"index"`
+		Document       string  `json:"document,omitempty"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Model string `json:"model,omitempty"`
+	Usage *struct {
+		TotalTokens int `json:"total_tokens,omitempty"`
+	} `json:"usage,omitempty"`
+}
+
 // CallOption allows optional parameters for calls
 type CallOption func(*CallConfig)
 
