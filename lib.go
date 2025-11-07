@@ -9,6 +9,8 @@ type Client interface {
 	// Call sends a message chain and returns the response
 	Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error)
 	StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error)
+	// GetEmbeddings calculates embeddings for the given text
+	GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error)
 }
 
 type Metadata = map[string]any
@@ -27,6 +29,12 @@ type StreamChunk struct {
 
 type StreamResponse struct {
 	Stream <-chan StreamChunk
+}
+
+// EmbeddingResponse represents the embedding response
+type EmbeddingResponse struct {
+	Embedding []float64 `json:"embedding"`
+	Metadata  Metadata  `json:"metadata,omitempty"`
 }
 
 // CallOption allows optional parameters for calls

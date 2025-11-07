@@ -268,3 +268,63 @@ func processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
 		}
 	}
 }
+
+// Google Embedding structures
+type GoogleEmbeddingRequest struct {
+	Content GeminiContent `json:"content"`
+}
+
+type GoogleEmbeddingResponse struct {
+	Error     *GeminiError `json:"error,omitempty"`
+	Embedding struct {
+		Values []float64 `json:"values"`
+	} `json:"embedding"`
+}
+
+// getEmbeddings implements the provider interface for Google embeddings
+func (p *googleProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+	// Use provided model or default to text-embedding-004
+	model := cfg.Model
+	if model == "" {
+		model = "text-embedding-004"
+	}
+
+	body := GoogleEmbeddingRequest{
+		Content: GeminiContent{
+			Parts: []GeminiPart{
+				{Text: text},
+			},
+		},
+	}
+
+	// Build the base URL with model
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":embedContent"
+	}
+
+	resp := GoogleEmbeddingResponse{}
+	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
+		req.Header.Set("x-goog-api-key", apiKey)
+	}, body, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("Google embedding API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if resp.Error != nil {
+		return nil, fmt.Errorf("Google embedding API error: %s", resp.Error.Message)
+	}
+
+	// Extract embedding from response
+	if len(resp.Embedding.Values) == 0 {
+		return nil, fmt.Errorf("no embedding data in response")
+	}
+
+	response := &EmbeddingResponse{
+		Embedding: resp.Embedding.Values,
+		Metadata:  Metadata{},
+	}
+
+	return response, nil
+}

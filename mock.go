@@ -95,3 +95,23 @@ func (p *mockProvider) streamCall(ctx context.Context, apiKey string, messages [
 		Stream: ch,
 	}, nil
 }
+
+// getEmbeddings implements the provider interface for mock embeddings
+func (p *mockProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+	// Create a simple mock embedding based on text length
+	// For testing purposes, create a small vector of predictable values
+	textLen := float64(len(text))
+	embedding := []float64{
+		textLen / 100.0,  // Normalized length
+		0.5,              // Fixed value
+		textLen / 1000.0, // Another normalized length
+	}
+
+	return &EmbeddingResponse{
+		Embedding: embedding,
+		Metadata: Metadata{
+			"mock":        true,
+			"text_length": len(text),
+		},
+	}, nil
+}

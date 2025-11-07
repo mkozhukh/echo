@@ -292,3 +292,73 @@ func (p *openAIProvider) streamCall(ctx context.Context, apiKey string, messages
 
 	return &StreamResponse{Stream: ch}, nil
 }
+
+// OpenAI Embedding structures
+type OpenAIEmbeddingRequest struct {
+	Model string `json:"model"`
+	Input string `json:"input"`
+}
+
+type OpenAIEmbeddingResponse struct {
+	Error *OpenAIError `json:"error,omitempty"`
+	Data  []struct {
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage *struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
+}
+
+// getEmbeddings implements the provider interface for OpenAI embeddings
+func (p *openAIProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+	// Use provided model or default to text-embedding-3-small
+	model := cfg.Model
+	if model == "" {
+		model = "text-embedding-3-small"
+	}
+
+	body := OpenAIEmbeddingRequest{
+		Model: model,
+		Input: text,
+	}
+
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1/embeddings"
+	}
+
+	resp := OpenAIEmbeddingResponse{}
+	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}, body, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI embedding API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if resp.Error != nil {
+		return nil, fmt.Errorf("OpenAI embedding API error: %s", resp.Error.Message)
+	}
+
+	// Extract embedding from response
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("no embedding data in response")
+	}
+
+	response := &EmbeddingResponse{
+		Embedding: resp.Data[0].Embedding,
+	}
+
+	// Add metadata if usage information is available
+	if resp.Usage != nil {
+		response.Metadata = Metadata{
+			"prompt_tokens": resp.Usage.PromptTokens,
+			"total_tokens":  resp.Usage.TotalTokens,
+		}
+	}
+
+	return response, nil
+}
