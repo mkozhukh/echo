@@ -359,3 +359,9 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 func (p *anthropicProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
 	return nil, fmt.Errorf("Anthropic does not support embeddings API")
 }
+
+// reRank implements the provider interface for Anthropic
+// Note: Anthropic does not currently support reranking API
+func (p *anthropicProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("Anthropic does not support reranking API")
+}

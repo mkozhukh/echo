@@ -11,6 +11,8 @@ type Client interface {
 	StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error)
 	// GetEmbeddings calculates embeddings for the given text
 	GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error)
+	// ReRank reranks documents based on relevance to query
+	ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error)
 }
 
 type Metadata = map[string]any
@@ -35,6 +37,12 @@ type StreamResponse struct {
 type EmbeddingResponse struct {
 	Embedding []float64 `json:"embedding"`
 	Metadata  Metadata  `json:"metadata,omitempty"`
+}
+
+// RerankResponse represents the rerank response
+type RerankResponse struct {
+	Scores   []float64 `json:"scores"`
+	Metadata Metadata  `json:"metadata,omitempty"`
 }
 
 // CallOption allows optional parameters for calls

@@ -33,6 +33,25 @@ type VoyageEmbeddingResponse struct {
 	} `json:"usage,omitempty"`
 }
 
+type VoyageRerankRequest struct {
+	Query      string   `json:"query"`
+	Documents  []string `json:"documents"`
+	Model      string   `json:"model"`
+	TopK       *int     `json:"top_k,omitempty"`
+	Truncation *bool    `json:"truncation,omitempty"`
+}
+
+type VoyageRerankResponse struct {
+	Error   *VoyageError `json:"error,omitempty"`
+	Results []struct {
+		Index          int     `json:"index"`
+		Document       string  `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	TotalTokens int    `json:"total_tokens"`
+	Model       string `json:"model"`
+}
+
 // call implements the provider interface but returns an error
 // Voyage AI only supports embeddings, not chat completions
 func (p *voyageProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
@@ -92,6 +111,60 @@ func (p *voyageProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 			"total_tokens": resp.Usage.TotalTokens,
 			"model":        resp.Model,
 		}
+	}
+
+	return response, nil
+}
+
+// reRank implements the provider interface for Voyage AI reranking
+func (p *voyageProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+	// Use provided model or default to rerank-2.5
+	model := cfg.Model
+	if model == "" {
+		model = "rerank-2.5"
+	}
+
+	body := VoyageRerankRequest{
+		Model:     model,
+		Query:     query,
+		Documents: documents,
+	}
+
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.voyageai.com/v1/rerank"
+	}
+
+	resp := VoyageRerankResponse{}
+	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}, body, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("Voyage AI rerank API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if resp.Error != nil {
+		return nil, fmt.Errorf("Voyage AI rerank API error: %s", resp.Error.Message)
+	}
+
+	// Extract scores and reorder them to match the original document order
+	// The API returns results sorted by relevance, but we need to return scores
+	// in the same order as the input documents
+	scores := make([]float64, len(documents))
+	for _, result := range resp.Results {
+		if result.Index >= 0 && result.Index < len(scores) {
+			scores[result.Index] = result.RelevanceScore
+		}
+	}
+
+	response := &RerankResponse{
+		Scores: scores,
+		Metadata: Metadata{
+			"total_tokens": resp.TotalTokens,
+			"model":        resp.Model,
+		},
 	}
 
 	return response, nil
