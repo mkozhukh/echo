@@ -7,7 +7,7 @@ import (
 )
 
 func TestMockClient_Call(t *testing.T) {
-	client, err := NewClient("mock/test", "")
+	client, err := NewCommonClient(nil, WithModel("mock/test"))
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestMockClient_Call(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := client.Call(ctx, tt.messages)
+			resp, err := client.Complete(ctx, tt.messages)
 			if err != nil {
 				t.Fatalf("Call() error = %v", err)
 			}
@@ -69,7 +69,7 @@ func TestMockClient_Call(t *testing.T) {
 }
 
 func TestMockClient_StreamCall(t *testing.T) {
-	client, err := NewClient("mock/test", "")
+	client, err := NewCommonClient(nil, WithModel("mock/test"))
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
@@ -84,7 +84,7 @@ func TestMockClient_StreamCall(t *testing.T) {
 
 	expected := "[system]: You are a helpful assistant\n[user]: Hello\n[agent]: Hi there!"
 
-	streamResp, err := client.StreamCall(ctx, messages)
+	streamResp, err := client.StreamComplete(ctx, messages)
 	if err != nil {
 		t.Fatalf("StreamCall() error = %v", err)
 	}
@@ -128,20 +128,20 @@ func TestMockClient_StreamCall(t *testing.T) {
 }
 
 func TestMockClient_InvalidMessages(t *testing.T) {
-	client, err := NewClient("mock/test", "")
+	client, err := NewCommonClient(nil, WithModel("mock/test"))
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
 	ctx := context.Background()
 
 	// Test empty messages
-	_, err = client.Call(ctx, []Message{})
+	_, err = client.Complete(ctx, []Message{})
 	if err == nil {
 		t.Errorf("Expected error for empty messages")
 	}
 
 	// Test invalid role
-	_, err = client.Call(ctx, []Message{
+	_, err = client.Complete(ctx, []Message{
 		{Role: "invalid", Content: "test"},
 	})
 	if err == nil {
@@ -149,7 +149,7 @@ func TestMockClient_InvalidMessages(t *testing.T) {
 	}
 
 	// Test system message not first
-	_, err = client.Call(ctx, []Message{
+	_, err = client.Complete(ctx, []Message{
 		{Role: User, Content: "test"},
 		{Role: System, Content: "test"},
 	})

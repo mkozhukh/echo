@@ -2,17 +2,40 @@ package echo
 
 import (
 	"context"
+	"net/http"
 )
 
 // Client is the main interface for LLM operations
 type Client interface {
+	// SetProvider sets a provider for the client
+	SetProvider(name string, provider Provider)
 	// Call sends a message chain and returns the response
-	Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error)
-	StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error)
+	Complete(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error)
+	// StreamComplete sends a message chain and returns the response as a stream
+	StreamComplete(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error)
 	// GetEmbeddings calculates embeddings for the given text
 	GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error)
 	// ReRank reranks documents based on relevance to query
 	ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error)
+
+	// ParseCompletionRequest parses a completion request and returns a CompletionRequest
+	ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error)
+	// ExecComplete builds a completion request and returns a CompletionResponse
+	ExecComplete(ctx context.Context, CompletionRequest *CompletionRequest, opts ...CallOption) (*CompletionResponse, error)
+	// WriteComplete writes a completion response to the response writer
+	WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error
+	// ParseEmbeddingRequest parses an embedding request and returns an EmbeddingRequest
+	ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error)
+	// ExecEmbedding builds an embedding request and returns an EmbeddingResponse
+	ExecEmbedding(ctx context.Context, EmbeddingRequest *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error)
+	// WriteEmbedding writes an embedding response to the response writer
+	WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error
+	// ParseRerankRequest parses a rerank request and returns a RerankRequest
+	ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error)
+	// ExecRerank builds a rerank request and returns a RerankResponse
+	ExecRerank(ctx context.Context, RerankRequest *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error)
+	// WriteRerank writes a rerank response to the response writer
+	WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error
 }
 
 type Metadata = map[string]any
@@ -45,27 +68,9 @@ type RerankResponse struct {
 	Metadata Metadata  `json:"metadata,omitempty"`
 }
 
-// Unified request structures for parsing HTTP requests
-// Using OpenAI format as the common format to minimize data copying
-
 // CompletionRequest represents a unified completion request
-// Based on OpenAI's chat completion format
-type CompletionRequest struct {
-	Model         string          `json:"model"`
-	Temperature   *float64        `json:"temperature,omitempty"`
-	MaxTokens     *int            `json:"max_completion_tokens,omitempty"`
-	Messages      []OpenAIMessage `json:"messages"`
-	Stream        bool            `json:"stream,omitempty"`
-	StreamOptions *struct {
-		IncludeUsage bool `json:"include_usage"`
-	} `json:"stream_options,omitempty"`
-}
-
-// OpenAIMessage represents a message in OpenAI format
-type OpenAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
+// Using OpenAI format as the common format to minimize data copying
+type CompletionRequest = OpenAIRequest
 
 // EmbeddingRequest represents a unified embedding request
 // Based on OpenAI's embedding format
@@ -77,11 +82,9 @@ type EmbeddingRequest struct {
 // RerankRequest represents a unified reranking request
 // Based on Voyage AI's rerank format
 type RerankRequest struct {
-	Query      string   `json:"query"`
-	Documents  []string `json:"documents"`
-	Model      string   `json:"model"`
-	TopK       *int     `json:"top_k,omitempty"`
-	Truncation *bool    `json:"truncation,omitempty"`
+	Model     string   `json:"model"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
 }
 
 // Unified response structures for Build methods
@@ -187,9 +190,4 @@ func WithEndPoint(endpoint string) CallOption {
 	return func(cfg *CallConfig) {
 		cfg.EndPoint = endpoint
 	}
-}
-
-// NewClient creates a new LLM client based on provider/model string
-func NewClient(fullModelName string, apiKey string, opts ...CallOption) (Client, error) {
-	return NewCommonClient(fullModelName, apiKey, opts...)
 }

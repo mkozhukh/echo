@@ -8,8 +8,10 @@ import (
 	"strings"
 )
 
-// googleProvider is a stateless provider for Google API
-type googleProvider struct{}
+// GoogleProvider is a stateless provider for Google API
+type GoogleProvider struct {
+	Key string
+}
 
 // Gemini-specific request/response structures
 type GeminiRequest struct {
@@ -69,8 +71,9 @@ type GeminiStreamResponse struct {
 }
 
 // NewGoogleClient creates a new Google client (deprecated, kept for compatibility)
-func NewGoogleClient(apiKey, model string, opts ...CallOption) *CommonClient {
-	client, _ := NewCommonClient("google/"+model, apiKey, opts...)
+func NewGoogleClient(apiKey, model string, opts ...CallOption) Client {
+	client, _ := NewClient(opts...)
+	client.SetProvider("google", &GoogleProvider{Key: apiKey})
 	return client
 }
 
@@ -141,7 +144,7 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 }
 
 // call implements the provider interface for Google
-func (p *googleProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
+func (p *GoogleProvider) call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error) {
 	geminiReq, err := prepareGoogleRequest(messages, cfg)
 	if err != nil {
 		return nil, err
@@ -156,7 +159,7 @@ func (p *googleProvider) call(ctx context.Context, apiKey string, messages []Mes
 	// Call the Gemini API using shared HTTP function
 	var response GeminiResponse
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
-		req.Header.Set("x-goog-api-key", apiKey)
+		req.Header.Set("x-goog-api-key", p.Key)
 	}, geminiReq, &response)
 	if err != nil {
 		return nil, fmt.Errorf("api call failed: %w", err)
@@ -190,7 +193,7 @@ func (p *googleProvider) call(ctx context.Context, apiKey string, messages []Mes
 }
 
 // streamCall implements the provider interface for Google streaming
-func (p *googleProvider) streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error) {
+func (p *GoogleProvider) streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error) {
 	geminiReq, err := prepareGoogleRequest(messages, cfg)
 	if err != nil {
 		return nil, err
@@ -207,7 +210,7 @@ func (p *googleProvider) streamCall(ctx context.Context, apiKey string, messages
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, streamURL, func(req *http.Request) {
-		req.Header.Set("x-goog-api-key", apiKey)
+		req.Header.Set("x-goog-api-key", p.Key)
 	}, geminiReq)
 	if err != nil {
 		return nil, fmt.Errorf("Gemini streaming API call failed: %w", err)
@@ -282,7 +285,7 @@ type GoogleEmbeddingResponse struct {
 }
 
 // getEmbeddings implements the provider interface for Google embeddings
-func (p *googleProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *GoogleProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
 	// Use provided model or default to text-embedding-004
 	model := cfg.Model
 	if model == "" {
@@ -305,7 +308,7 @@ func (p *googleProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 
 	resp := GoogleEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
-		req.Header.Set("x-goog-api-key", apiKey)
+		req.Header.Set("x-goog-api-key", p.Key)
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("Google embedding API call failed: %w", err)
@@ -331,13 +334,13 @@ func (p *googleProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 
 // reRank implements the provider interface for Google
 // Note: Google does not currently support reranking API
-func (p *googleProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+func (p *GoogleProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("Google does not support reranking API")
 }
 
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 // Converts from Gemini format to OpenAI-compatible format
-func (p *googleProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+func (p *GoogleProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
 	var geminiReq GeminiRequest
 	if err := json.NewDecoder(req.Body).Decode(&geminiReq); err != nil {
 		return nil, fmt.Errorf("failed to parse Gemini completion request: %w", err)
@@ -403,7 +406,7 @@ func (p *googleProvider) parseCompletionRequest(req *http.Request) (*CompletionR
 
 // parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
 // Converts from Google embedding format to OpenAI-compatible format
-func (p *googleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+func (p *GoogleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
 	var googleReq GoogleEmbeddingRequest
 	if err := json.NewDecoder(req.Body).Decode(&googleReq); err != nil {
 		return nil, fmt.Errorf("failed to parse Google embedding request: %w", err)
@@ -425,12 +428,12 @@ func (p *googleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingReq
 
 // parseRerankRequest parses an HTTP request into a RerankRequest
 // Google does not support reranking, so this returns an error
-func (p *googleProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
+func (p *GoogleProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
 	return nil, fmt.Errorf("Google does not support reranking API")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
-func (p *googleProvider) buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
+func (p *GoogleProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
 	// Convert CompletionRequest to GeminiRequest
 	geminiReq := GeminiRequest{
 		Contents: make([]GeminiContent, 0, len(req.Messages)),
@@ -484,7 +487,7 @@ func (p *googleProvider) buildCompletionRequest(ctx context.Context, apiKey stri
 	// Make the API call
 	var geminiResp GeminiResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("x-goog-api-key", apiKey)
+		httpReq.Header.Set("x-goog-api-key", p.Key)
 	}, geminiReq, &geminiResp)
 	if err != nil {
 		return nil, fmt.Errorf("Google API call failed: %w", err)
@@ -536,7 +539,7 @@ func (p *googleProvider) buildCompletionRequest(ctx context.Context, apiKey stri
 }
 
 // buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-func (p *googleProvider) buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
+func (p *GoogleProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
 	// Use provided model or default to text-embedding-004
 	model := req.Model
 	if model == "" {
@@ -559,7 +562,7 @@ func (p *googleProvider) buildEmbeddingRequest(ctx context.Context, apiKey strin
 
 	var googleResp GoogleEmbeddingResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("x-goog-api-key", apiKey)
+		httpReq.Header.Set("x-goog-api-key", p.Key)
 	}, body, &googleResp)
 	if err != nil {
 		return nil, fmt.Errorf("Google embedding API call failed: %w", err)
@@ -590,24 +593,24 @@ func (p *googleProvider) buildEmbeddingRequest(ctx context.Context, apiKey strin
 
 // buildRerankRequest builds and executes a reranking request, returning a unified response
 // Google does not support reranking, so this returns an error
-func (p *googleProvider) buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
+func (p *GoogleProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
 	return nil, fmt.Errorf("Google does not support reranking API")
 }
 
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
-func (p *googleProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
+func (p *GoogleProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
 }
 
 // writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-func (p *googleProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
+func (p *GoogleProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
 }
 
 // writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
 // Google does not support reranking, so this returns an error
-func (p *googleProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
+func (p *GoogleProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
 	return fmt.Errorf("Google does not support reranking API")
 }

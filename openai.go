@@ -34,6 +34,12 @@ type OpenAIRequest struct {
 	Provider *OpenRouterProvider `json:"provider,omitempty"`
 }
 
+// OpenAIMessage represents a message in OpenAI format
+type OpenAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 type OpenAIResponse struct {
 	Error   *OpenAIError `json:"error,omitempty"`
 	Choices []struct {
@@ -48,12 +54,15 @@ type OpenAIResponse struct {
 	} `json:"usage,omitempty"`
 }
 
-// openAIProvider is a stateless provider for OpenAI API
-type openAIProvider struct{}
+// OpenAIProvider is a stateless provider for OpenAI API
+type OpenAIProvider struct {
+	Key string
+}
 
 // NewOpenAIClient creates a new OpenAI client (deprecated, kept for compatibility)
-func NewOpenAIClient(apiKey, model string, opts ...CallOption) *CommonClient {
-	client, _ := NewCommonClient("openai/"+model, apiKey, opts...)
+func NewOpenAIClient(apiKey, model string, opts ...CallOption) Client {
+	client, _ := NewClient(opts...)
+	client.SetProvider("openai", &OpenAIProvider{Key: apiKey})
 	return client
 }
 
@@ -139,7 +148,7 @@ func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (O
 }
 
 // call implements the provider interface for OpenAI
-func (p *openAIProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
+func (p *OpenAIProvider) call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error) {
 	body, err := prepareOpenAIRequest(messages, false, cfg)
 	if err != nil {
 		return nil, err
@@ -153,7 +162,7 @@ func (p *openAIProvider) call(ctx context.Context, apiKey string, messages []Mes
 
 	resp := OpenAIResponse{}
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
@@ -200,7 +209,7 @@ type OpenAIStreamResponse struct {
 }
 
 // streamCall implements the provider interface for OpenAI streaming
-func (p *openAIProvider) streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error) {
+func (p *OpenAIProvider) streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error) {
 	body, err := prepareOpenAIRequest(messages, true, cfg)
 	if err != nil {
 		return nil, err
@@ -214,7 +223,7 @@ func (p *openAIProvider) streamCall(ctx context.Context, apiKey string, messages
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, baseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI streaming API call failed: %w", err)
@@ -307,7 +316,7 @@ type OpenAIEmbeddingResponse struct {
 }
 
 // getEmbeddings implements the provider interface for OpenAI embeddings
-func (p *openAIProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *OpenAIProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
 	// Use provided model or default to text-embedding-3-small
 	model := cfg.Model
 	if model == "" {
@@ -327,7 +336,7 @@ func (p *openAIProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 
 	resp := OpenAIEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI embedding API call failed: %w", err)
@@ -360,13 +369,13 @@ func (p *openAIProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 
 // reRank implements the provider interface for OpenAI
 // Note: OpenAI does not currently support reranking API
-func (p *openAIProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+func (p *OpenAIProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("OpenAI does not support reranking API")
 }
 
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 // For OpenAI, this is a direct JSON parse since we use OpenAI format as the common format
-func (p *openAIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+func (p *OpenAIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
 	var completionReq CompletionRequest
 	if err := json.NewDecoder(req.Body).Decode(&completionReq); err != nil {
 		return nil, fmt.Errorf("failed to parse completion request: %w", err)
@@ -376,7 +385,7 @@ func (p *openAIProvider) parseCompletionRequest(req *http.Request) (*CompletionR
 
 // parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
 // For OpenAI, this is a direct JSON parse since we use OpenAI format as the common format
-func (p *openAIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+func (p *OpenAIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
 	var embeddingReq EmbeddingRequest
 	if err := json.NewDecoder(req.Body).Decode(&embeddingReq); err != nil {
 		return nil, fmt.Errorf("failed to parse embedding request: %w", err)
@@ -386,12 +395,12 @@ func (p *openAIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingReq
 
 // parseRerankRequest parses an HTTP request into a RerankRequest
 // OpenAI does not support reranking, so this returns an error
-func (p *openAIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
+func (p *OpenAIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
 	return nil, fmt.Errorf("OpenAI does not support reranking API")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
-func (p *openAIProvider) buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
+func (p *OpenAIProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
 	// Convert CompletionRequest to OpenAIRequest
 	openaiReq := OpenAIRequest{
 		Model:         req.Model,
@@ -411,7 +420,7 @@ func (p *openAIProvider) buildCompletionRequest(ctx context.Context, apiKey stri
 	// Make the API call
 	var openaiResp OpenAIResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+		httpReq.Header.Set("Authorization", "Bearer "+p.Key)
 	}, openaiReq, &openaiResp)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
@@ -463,7 +472,7 @@ func (p *openAIProvider) buildCompletionRequest(ctx context.Context, apiKey stri
 }
 
 // buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-func (p *openAIProvider) buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
+func (p *OpenAIProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
 	// Use provided model or default to text-embedding-3-small
 	model := req.Model
 	if model == "" {
@@ -483,7 +492,7 @@ func (p *openAIProvider) buildEmbeddingRequest(ctx context.Context, apiKey strin
 
 	var openaiResp OpenAIEmbeddingResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+		httpReq.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &openaiResp)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI embedding API call failed: %w", err)
@@ -528,24 +537,24 @@ func (p *openAIProvider) buildEmbeddingRequest(ctx context.Context, apiKey strin
 
 // buildRerankRequest builds and executes a reranking request, returning a unified response
 // OpenAI does not support reranking, so this returns an error
-func (p *openAIProvider) buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
+func (p *OpenAIProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
 	return nil, fmt.Errorf("OpenAI does not support reranking API")
 }
 
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
-func (p *openAIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
+func (p *OpenAIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
 }
 
 // writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-func (p *openAIProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
+func (p *OpenAIProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
 }
 
 // writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
 // OpenAI does not support reranking, so this returns an error
-func (p *openAIProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
+func (p *OpenAIProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
 	return fmt.Errorf("OpenAI does not support reranking API")
 }

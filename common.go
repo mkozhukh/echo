@@ -9,11 +9,11 @@ import (
 )
 
 // provider interface for internal provider implementations
-type provider interface {
-	call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error)
-	streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error)
-	getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error)
-	reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
+type Provider interface {
+	call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error)
+	streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error)
+	getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error)
+	reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
 
 	// Parse HTTP requests into unified request structures
 	parseCompletionRequest(req *http.Request) (*CompletionRequest, error)
@@ -21,9 +21,9 @@ type provider interface {
 	parseRerankRequest(req *http.Request) (*RerankRequest, error)
 
 	// Build methods - consume parsed requests and return unified responses
-	buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error)
-	buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error)
-	buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error)
+	buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error)
+	buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error)
+	buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error)
 
 	// Write methods - write unified responses back as HTTP responses
 	writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error
@@ -35,50 +35,68 @@ type provider interface {
 type CommonClient struct {
 	apiKey      string
 	baseConfig  CallConfig
-	providerMap map[string]provider
+	providerMap map[string]Provider
 }
 
 // NewCommonClient creates a new CommonClient instance
-func NewCommonClient(fullModelName string, apiKey string, opts ...CallOption) (*CommonClient, error) {
-	if fullModelName == "" {
-		fullModelName = os.Getenv("ECHO_MODEL")
-	}
-
-	if fullModelName != "" {
-		// Parse initial model just to check if it's valid
-		_, _, _, err := parseModelString(fullModelName)
-		if err != nil {
-			return nil, err
-		}
-	}
-
+func NewClient(opts ...CallOption) (Client, error) {
 	// Build base config with the model
-	cfg := CallConfig{
-		Model: fullModelName,
-	}
+	cfg := CallConfig{}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
 	// Initialize client with provider map
 	client := &CommonClient{
-		apiKey:     apiKey,
-		baseConfig: cfg,
-		providerMap: map[string]provider{
-			"openai":     &openAIProvider{},
-			"anthropic":  &anthropicProvider{},
-			"google":     &googleProvider{},
-			"mock":       &mockProvider{},
-			"openrouter": &openAIProvider{}, // OpenRouter uses OpenAI API
-			"voyage":     &voyageProvider{}, // Voyage AI - embeddings only
-		},
+		baseConfig:  cfg,
+		providerMap: map[string]Provider{},
+	}
+
+	return client, nil
+}
+
+func (c *CommonClient) SetProvider(name string, provider Provider) {
+	c.providerMap[name] = provider
+}
+
+type providerRetriver func(string) Provider
+
+var knownProviders = map[string]providerRetriver{
+	"openai":     func(key string) Provider { return &OpenAIProvider{Key: key} },
+	"anthropic":  func(key string) Provider { return &AnthropicProvider{Key: key} },
+	"google":     func(key string) Provider { return &GoogleProvider{Key: key} },
+	"mock":       func(key string) Provider { return &MockProvider{} },
+	"openrouter": func(key string) Provider { return &OpenAIProvider{Key: key} },
+	"voyage":     func(key string) Provider { return &VoyageProvider{Key: key} },
+}
+
+func NewCommonClient(keys map[string]string, opts ...CallOption) (Client, error) {
+	client, err := NewClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	if keys == nil {
+		for name, retriver := range knownProviders {
+			envName := strings.ToUpper(name) + "_API_KEY"
+			apiKey := os.Getenv(envName)
+			if apiKey == "" {
+				apiKey = os.Getenv("ECHO_KEY")
+			}
+
+			client.SetProvider(name, retriver(apiKey))
+		}
+	} else {
+		for name, key := range keys {
+			client.SetProvider(name, knownProviders[name](key))
+		}
 	}
 
 	return client, nil
 }
 
 // prepareCall resolves provider, model, and configuration for a call
-func (c *CommonClient) prepareCall(opts ...CallOption) (provider, string, CallConfig, error) {
+func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, error) {
 	// Merge configs
 	cfg := c.baseConfig
 	for _, opt := range opts {
@@ -88,11 +106,8 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (provider, string, CallCo
 	// Resolve provider and model
 	providerName, resolvedModel, endpoint, err := c.resolveProviderAndModel(cfg.Model)
 	if err != nil {
-		return nil, "", cfg, err
+		return nil, cfg, err
 	}
-
-	// Resolve API key
-	apiKey := c.resolveAPIKey(c.apiKey, providerName)
 
 	// Update config with resolved model
 	cfg.Model = resolvedModel
@@ -101,7 +116,7 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (provider, string, CallCo
 	// Get provider
 	p, ok := c.providerMap[providerName]
 	if !ok {
-		return nil, "", cfg, fmt.Errorf("unknown provider: %s", providerName)
+		return nil, cfg, fmt.Errorf("unknown provider: %s", providerName)
 	}
 
 	// Special handling for openrouter
@@ -111,54 +126,138 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (provider, string, CallCo
 		}
 	}
 
-	return p, apiKey, cfg, nil
+	return p, cfg, nil
+}
+
+// prepareCall resolves provider, model, and configuration for a call
+func (c *CommonClient) getProvider(opts ...CallOption) (Provider, error) {
+	// Merge configs
+	cfg := c.baseConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	// Resolve provider and model
+	providerName, _, _, err := c.resolveProviderAndModel(cfg.Model)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get provider
+	p, ok := c.providerMap[providerName]
+	if !ok {
+		return nil, fmt.Errorf("unknown provider: %s", providerName)
+	}
+
+	return p, nil
 }
 
 // Call implements the Client interface
-func (c *CommonClient) Call(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	p, apiKey, cfg, err := c.prepareCall(opts...)
+func (c *CommonClient) Complete(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
+	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.call(ctx, apiKey, messages, cfg)
+	return p.call(ctx, messages, cfg)
 }
 
 // StreamCall implements the Client interface
-func (c *CommonClient) StreamCall(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	p, apiKey, cfg, err := c.prepareCall(opts...)
+func (c *CommonClient) StreamComplete(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
+	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.streamCall(ctx, apiKey, messages, cfg)
+	return p.streamCall(ctx, messages, cfg)
 }
 
 // GetEmbeddings implements the Client interface
 func (c *CommonClient) GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error) {
-	p, apiKey, cfg, err := c.prepareCall(opts...)
+	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.getEmbeddings(ctx, apiKey, text, cfg)
+	return p.getEmbeddings(ctx, text, cfg)
 }
 
 // ReRank implements the Client interface
 func (c *CommonClient) ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error) {
-	p, apiKey, cfg, err := c.prepareCall(opts...)
+	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.reRank(ctx, apiKey, query, documents, cfg)
+	return p.reRank(ctx, query, documents, cfg)
 }
 
-func (c *CommonClient) resolveAPIKey(apiKey string, providerName string) string {
-	if apiKey == "" {
-		envName := strings.ToUpper(providerName) + "_API_KEY"
-		apiKey = os.Getenv(envName)
+func (c *CommonClient) ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error) {
+	p, err := c.getProvider(opts...)
+	if err != nil {
+		return nil, err
 	}
-	if apiKey == "" {
-		apiKey = os.Getenv("ECHO_KEY")
+	return p.parseCompletionRequest(req)
+}
+
+func (c *CommonClient) ExecComplete(ctx context.Context, CompletionRequest *CompletionRequest, opts ...CallOption) (*CompletionResponse, error) {
+	p, cfg, err := c.prepareCall(opts...)
+	if err != nil {
+		return nil, err
 	}
-	return apiKey
+	return p.buildCompletionRequest(ctx, CompletionRequest, cfg)
+}
+
+func (c *CommonClient) WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error {
+	p, err := c.getProvider(opts...)
+	if err != nil {
+		return err
+	}
+	return p.writeCompletionResponse(w, resp)
+}
+
+func (c *CommonClient) ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error) {
+	p, err := c.getProvider(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.parseEmbeddingRequest(req)
+}
+
+func (c *CommonClient) ExecEmbedding(ctx context.Context, EmbeddingRequest *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error) {
+	p, cfg, err := c.prepareCall(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.buildEmbeddingRequest(ctx, EmbeddingRequest, cfg)
+}
+
+func (c *CommonClient) WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error {
+	p, err := c.getProvider(opts...)
+	if err != nil {
+		return err
+	}
+	return p.writeEmbeddingResponse(w, resp)
+}
+
+func (c *CommonClient) ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error) {
+	p, err := c.getProvider(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.parseRerankRequest(req)
+}
+
+func (c *CommonClient) ExecRerank(ctx context.Context, RerankRequest *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error) {
+	p, cfg, err := c.prepareCall(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.buildRerankRequest(ctx, RerankRequest, cfg)
+}
+
+func (c *CommonClient) WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error {
+	p, err := c.getProvider(opts...)
+	if err != nil {
+		return err
+	}
+	return p.writeRerankResponse(w, resp)
 }
 
 // resolveProviderAndModel determines the provider and resolves model aliases

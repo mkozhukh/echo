@@ -7,9 +7,11 @@ import (
 	"net/http"
 )
 
-// voyageProvider is a stateless provider for Voyage AI embeddings
+// VoyageProvider is a stateless provider for Voyage AI embeddings
 // Voyage AI is Anthropic's recommended embedding provider
-type voyageProvider struct{}
+type VoyageProvider struct {
+	Key string
+}
 
 // Voyage AI structures
 type VoyageEmbeddingRequest struct {
@@ -35,11 +37,11 @@ type VoyageEmbeddingResponse struct {
 }
 
 type VoyageRerankRequest struct {
-	Query      string   `json:"query"`
-	Documents  []string `json:"documents"`
-	Model      string   `json:"model"`
-	TopK       *int     `json:"top_k,omitempty"`
-	Truncation *bool    `json:"truncation,omitempty"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
+	Model     string   `json:"model"`
+	// TopK       *int     `json:"top_k,omitempty"`
+	// Truncation *bool    `json:"truncation,omitempty"`
 }
 
 type VoyageRerankResponse struct {
@@ -55,18 +57,18 @@ type VoyageRerankResponse struct {
 
 // call implements the provider interface but returns an error
 // Voyage AI only supports embeddings, not chat completions
-func (p *voyageProvider) call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error) {
+func (p *VoyageProvider) call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error) {
 	return nil, fmt.Errorf("Voyage AI only supports embeddings, not chat completions. Use GetEmbeddings() instead")
 }
 
 // streamCall implements the provider interface but returns an error
 // Voyage AI only supports embeddings, not chat completions
-func (p *voyageProvider) streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error) {
+func (p *VoyageProvider) streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error) {
 	return nil, fmt.Errorf("Voyage AI only supports embeddings, not chat completions. Use GetEmbeddings() instead")
 }
 
 // getEmbeddings implements the provider interface for Voyage AI embeddings
-func (p *voyageProvider) getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *VoyageProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
 	// Use provided model or default to voyage-3
 	model := cfg.Model
 	if model == "" {
@@ -86,7 +88,7 @@ func (p *voyageProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 
 	resp := VoyageEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("Voyage AI embedding API call failed: %w", err)
@@ -118,7 +120,7 @@ func (p *voyageProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 }
 
 // reRank implements the provider interface for Voyage AI reranking
-func (p *voyageProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+func (p *VoyageProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
 	// Use provided model or default to rerank-2.5
 	model := cfg.Model
 	if model == "" {
@@ -139,7 +141,7 @@ func (p *voyageProvider) reRank(ctx context.Context, apiKey string, query string
 
 	resp := VoyageRerankResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("Voyage AI rerank API call failed: %w", err)
@@ -173,13 +175,13 @@ func (p *voyageProvider) reRank(ctx context.Context, apiKey string, query string
 
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 // Voyage AI only supports embeddings and reranking, not chat completions
-func (p *voyageProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+func (p *VoyageProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
 	return nil, fmt.Errorf("Voyage AI only supports embeddings and reranking, not chat completions")
 }
 
 // parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
 // Converts from Voyage AI format to OpenAI-compatible format
-func (p *voyageProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+func (p *VoyageProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
 	var voyageReq VoyageEmbeddingRequest
 	if err := json.NewDecoder(req.Body).Decode(&voyageReq); err != nil {
 		return nil, fmt.Errorf("failed to parse Voyage embedding request: %w", err)
@@ -195,7 +197,7 @@ func (p *voyageProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingReq
 
 // parseRerankRequest parses an HTTP request into a RerankRequest
 // For Voyage AI, this is a direct JSON parse since we use Voyage format for RerankRequest
-func (p *voyageProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
+func (p *VoyageProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
 	var rerankReq RerankRequest
 	if err := json.NewDecoder(req.Body).Decode(&rerankReq); err != nil {
 		return nil, fmt.Errorf("failed to parse Voyage rerank request: %w", err)
@@ -206,12 +208,12 @@ func (p *voyageProvider) parseRerankRequest(req *http.Request) (*RerankRequest, 
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
 // Voyage AI only supports embeddings and reranking, not chat completions
-func (p *voyageProvider) buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
+func (p *VoyageProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
 	return nil, fmt.Errorf("Voyage AI only supports embeddings and reranking, not chat completions")
 }
 
 // buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-func (p *voyageProvider) buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
+func (p *VoyageProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
 	// Use provided model or default to voyage-3
 	model := req.Model
 	if model == "" {
@@ -231,7 +233,7 @@ func (p *voyageProvider) buildEmbeddingRequest(ctx context.Context, apiKey strin
 
 	var voyageResp VoyageEmbeddingResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+		httpReq.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &voyageResp)
 	if err != nil {
 		return nil, fmt.Errorf("Voyage AI embedding API call failed: %w", err)
@@ -275,7 +277,7 @@ func (p *voyageProvider) buildEmbeddingRequest(ctx context.Context, apiKey strin
 }
 
 // buildRerankRequest builds and executes a reranking request, returning a unified response
-func (p *voyageProvider) buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
+func (p *VoyageProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
 	// Use provided model or default to rerank-2.5
 	model := req.Model
 	if model == "" {
@@ -283,11 +285,9 @@ func (p *voyageProvider) buildRerankRequest(ctx context.Context, apiKey string, 
 	}
 
 	body := VoyageRerankRequest{
-		Model:      model,
-		Query:      req.Query,
-		Documents:  req.Documents,
-		TopK:       req.TopK,
-		Truncation: req.Truncation,
+		Model:     model,
+		Query:     req.Query,
+		Documents: req.Documents,
 	}
 
 	// Set default base URL if not provided
@@ -298,7 +298,7 @@ func (p *voyageProvider) buildRerankRequest(ctx context.Context, apiKey string, 
 
 	var voyageResp VoyageRerankResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+		httpReq.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &voyageResp)
 	if err != nil {
 		return nil, fmt.Errorf("Voyage AI rerank API call failed: %w", err)
@@ -338,18 +338,18 @@ func (p *voyageProvider) buildRerankRequest(ctx context.Context, apiKey string, 
 
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
 // Voyage AI only supports embeddings and reranking, not chat completions
-func (p *voyageProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
+func (p *VoyageProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	return fmt.Errorf("Voyage AI only supports embeddings and reranking, not chat completions")
 }
 
 // writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-func (p *voyageProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
+func (p *VoyageProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
 }
 
 // writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-func (p *voyageProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
+func (p *VoyageProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
 }
