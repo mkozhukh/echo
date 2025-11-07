@@ -389,3 +389,163 @@ func (p *openAIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingReq
 func (p *openAIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
 	return nil, fmt.Errorf("OpenAI does not support reranking API")
 }
+
+// buildCompletionRequest builds and executes a completion request, returning a unified response
+func (p *openAIProvider) buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
+	// Convert CompletionRequest to OpenAIRequest
+	openaiReq := OpenAIRequest{
+		Model:         req.Model,
+		Temperature:   req.Temperature,
+		MaxTokens:     req.MaxTokens,
+		Messages:      req.Messages,
+		Stream:        req.Stream,
+		StreamOptions: req.StreamOptions,
+	}
+
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1/chat/completions"
+	}
+
+	// Make the API call
+	var openaiResp OpenAIResponse
+	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}, openaiReq, &openaiResp)
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if openaiResp.Error != nil {
+		return nil, fmt.Errorf("OpenAI API error: %s", openaiResp.Error.Message)
+	}
+
+	// Convert to unified CompletionResponse
+	completionResp := &CompletionResponse{
+		ID:      "",
+		Object:  "chat.completion",
+		Created: 0,
+		Model:   req.Model,
+		Choices: make([]struct {
+			Index   int `json:"index"`
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason,omitempty"`
+		}, len(openaiResp.Choices)),
+	}
+
+	// Copy choices
+	for i, choice := range openaiResp.Choices {
+		completionResp.Choices[i].Index = i
+		completionResp.Choices[i].Message.Role = "assistant"
+		completionResp.Choices[i].Message.Content = choice.Message.Content
+		completionResp.Choices[i].FinishReason = "stop"
+	}
+
+	// Copy usage if available
+	if openaiResp.Usage != nil {
+		completionResp.Usage = &struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		}{
+			PromptTokens:     openaiResp.Usage.PromptTokens,
+			CompletionTokens: openaiResp.Usage.CompletionTokens,
+			TotalTokens:      openaiResp.Usage.TotalTokens,
+		}
+	}
+
+	return completionResp, nil
+}
+
+// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
+func (p *openAIProvider) buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
+	// Use provided model or default to text-embedding-3-small
+	model := req.Model
+	if model == "" {
+		model = "text-embedding-3-small"
+	}
+
+	body := OpenAIEmbeddingRequest{
+		Model: model,
+		Input: req.Input,
+	}
+
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1/embeddings"
+	}
+
+	var openaiResp OpenAIEmbeddingResponse
+	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}, body, &openaiResp)
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI embedding API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if openaiResp.Error != nil {
+		return nil, fmt.Errorf("OpenAI embedding API error: %s", openaiResp.Error.Message)
+	}
+
+	// Convert to unified response
+	unifiedResp := &UnifiedEmbeddingResponse{
+		Object: "list",
+		Data: make([]struct {
+			Object    string    `json:"object,omitempty"`
+			Embedding []float64 `json:"embedding"`
+			Index     int       `json:"index"`
+		}, len(openaiResp.Data)),
+		Model: model,
+	}
+
+	// Copy embedding data
+	for i, data := range openaiResp.Data {
+		unifiedResp.Data[i].Object = "embedding"
+		unifiedResp.Data[i].Embedding = data.Embedding
+		unifiedResp.Data[i].Index = data.Index
+	}
+
+	// Copy usage if available
+	if openaiResp.Usage != nil {
+		unifiedResp.Usage = &struct {
+			PromptTokens int `json:"prompt_tokens"`
+			TotalTokens  int `json:"total_tokens"`
+		}{
+			PromptTokens: openaiResp.Usage.PromptTokens,
+			TotalTokens:  openaiResp.Usage.TotalTokens,
+		}
+	}
+
+	return unifiedResp, nil
+}
+
+// buildRerankRequest builds and executes a reranking request, returning a unified response
+// OpenAI does not support reranking, so this returns an error
+func (p *openAIProvider) buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
+	return nil, fmt.Errorf("OpenAI does not support reranking API")
+}
+
+// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
+func (p *openAIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp)
+}
+
+// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
+func (p *openAIProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp)
+}
+
+// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
+// OpenAI does not support reranking, so this returns an error
+func (p *openAIProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
+	return fmt.Errorf("OpenAI does not support reranking API")
+}

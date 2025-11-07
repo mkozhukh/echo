@@ -203,3 +203,153 @@ func (p *voyageProvider) parseRerankRequest(req *http.Request) (*RerankRequest, 
 
 	return &rerankReq, nil
 }
+
+// buildCompletionRequest builds and executes a completion request, returning a unified response
+// Voyage AI only supports embeddings and reranking, not chat completions
+func (p *voyageProvider) buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
+	return nil, fmt.Errorf("Voyage AI only supports embeddings and reranking, not chat completions")
+}
+
+// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
+func (p *voyageProvider) buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
+	// Use provided model or default to voyage-3
+	model := req.Model
+	if model == "" {
+		model = "voyage-3"
+	}
+
+	body := VoyageEmbeddingRequest{
+		Model: model,
+		Input: req.Input,
+	}
+
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.voyageai.com/v1/embeddings"
+	}
+
+	var voyageResp VoyageEmbeddingResponse
+	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}, body, &voyageResp)
+	if err != nil {
+		return nil, fmt.Errorf("Voyage AI embedding API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if voyageResp.Error != nil {
+		return nil, fmt.Errorf("Voyage AI embedding API error: %s", voyageResp.Error.Message)
+	}
+
+	// Convert to unified response
+	unifiedResp := &UnifiedEmbeddingResponse{
+		Object: "list",
+		Data: make([]struct {
+			Object    string    `json:"object,omitempty"`
+			Embedding []float64 `json:"embedding"`
+			Index     int       `json:"index"`
+		}, len(voyageResp.Data)),
+		Model: model,
+	}
+
+	// Copy embedding data
+	for i, data := range voyageResp.Data {
+		unifiedResp.Data[i].Object = "embedding"
+		unifiedResp.Data[i].Embedding = data.Embedding
+		unifiedResp.Data[i].Index = data.Index
+	}
+
+	// Copy usage if available
+	if voyageResp.Usage != nil {
+		unifiedResp.Usage = &struct {
+			PromptTokens int `json:"prompt_tokens"`
+			TotalTokens  int `json:"total_tokens"`
+		}{
+			PromptTokens: 0, // Voyage doesn't provide prompt tokens separately
+			TotalTokens:  voyageResp.Usage.TotalTokens,
+		}
+	}
+
+	return unifiedResp, nil
+}
+
+// buildRerankRequest builds and executes a reranking request, returning a unified response
+func (p *voyageProvider) buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
+	// Use provided model or default to rerank-2.5
+	model := req.Model
+	if model == "" {
+		model = "rerank-2.5"
+	}
+
+	body := VoyageRerankRequest{
+		Model:      model,
+		Query:      req.Query,
+		Documents:  req.Documents,
+		TopK:       req.TopK,
+		Truncation: req.Truncation,
+	}
+
+	// Set default base URL if not provided
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.voyageai.com/v1/rerank"
+	}
+
+	var voyageResp VoyageRerankResponse
+	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}, body, &voyageResp)
+	if err != nil {
+		return nil, fmt.Errorf("Voyage AI rerank API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if voyageResp.Error != nil {
+		return nil, fmt.Errorf("Voyage AI rerank API error: %s", voyageResp.Error.Message)
+	}
+
+	// Convert to unified response
+	unifiedResp := &UnifiedRerankResponse{
+		Results: make([]struct {
+			Index          int     `json:"index"`
+			Document       string  `json:"document,omitempty"`
+			RelevanceScore float64 `json:"relevance_score"`
+		}, len(voyageResp.Results)),
+		Model: model,
+	}
+
+	// Copy results
+	for i, result := range voyageResp.Results {
+		unifiedResp.Results[i].Index = result.Index
+		unifiedResp.Results[i].Document = result.Document
+		unifiedResp.Results[i].RelevanceScore = result.RelevanceScore
+	}
+
+	// Add usage information
+	unifiedResp.Usage = &struct {
+		TotalTokens int `json:"total_tokens,omitempty"`
+	}{
+		TotalTokens: voyageResp.TotalTokens,
+	}
+
+	return unifiedResp, nil
+}
+
+// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
+// Voyage AI only supports embeddings and reranking, not chat completions
+func (p *voyageProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
+	return fmt.Errorf("Voyage AI only supports embeddings and reranking, not chat completions")
+}
+
+// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
+func (p *voyageProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp)
+}
+
+// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
+func (p *voyageProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp)
+}

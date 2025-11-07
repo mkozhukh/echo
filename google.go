@@ -428,3 +428,186 @@ func (p *googleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingReq
 func (p *googleProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
 	return nil, fmt.Errorf("Google does not support reranking API")
 }
+
+// buildCompletionRequest builds and executes a completion request, returning a unified response
+func (p *googleProvider) buildCompletionRequest(ctx context.Context, apiKey string, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
+	// Convert CompletionRequest to GeminiRequest
+	geminiReq := GeminiRequest{
+		Contents: make([]GeminiContent, 0, len(req.Messages)),
+	}
+
+	// Process messages
+	var systemMsg string
+	for _, msg := range req.Messages {
+		if msg.Role == "system" {
+			systemMsg = msg.Content
+		} else {
+			role := msg.Role
+			if role == "assistant" {
+				role = "model" // Gemini uses "model" instead of "assistant"
+			}
+			geminiReq.Contents = append(geminiReq.Contents, GeminiContent{
+				Role: role,
+				Parts: []GeminiPart{
+					{Text: msg.Content},
+				},
+			})
+		}
+	}
+
+	// Add system instruction if present
+	if systemMsg != "" {
+		geminiReq.SystemInstruction = &GeminiContent{
+			Parts: []GeminiPart{
+				{Text: systemMsg},
+			},
+		}
+	}
+
+	// Add generation config if needed
+	if req.Temperature != nil || req.MaxTokens != nil {
+		geminiReq.GenerationConfig = &struct {
+			Temperature     *float64 `json:"temperature,omitempty"`
+			MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
+		}{
+			Temperature:     req.Temperature,
+			MaxOutputTokens: req.MaxTokens,
+		}
+	}
+
+	// Build the base URL with model
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + req.Model + ":generateContent"
+	}
+
+	// Make the API call
+	var geminiResp GeminiResponse
+	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
+		httpReq.Header.Set("x-goog-api-key", apiKey)
+	}, geminiReq, &geminiResp)
+	if err != nil {
+		return nil, fmt.Errorf("Google API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if geminiResp.Error != nil {
+		return nil, fmt.Errorf("Google API error: %s", geminiResp.Error.Message)
+	}
+
+	// Convert to unified CompletionResponse
+	completionResp := &CompletionResponse{
+		ID:      "",
+		Object:  "chat.completion",
+		Created: 0,
+		Model:   req.Model,
+		Choices: make([]struct {
+			Index   int `json:"index"`
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason,omitempty"`
+		}, 1),
+	}
+
+	// Extract text from response
+	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
+		completionResp.Choices[0].Index = 0
+		completionResp.Choices[0].Message.Role = "assistant"
+		completionResp.Choices[0].Message.Content = geminiResp.Candidates[0].Content.Parts[0].Text
+		completionResp.Choices[0].FinishReason = "stop"
+	}
+
+	// Add usage information if available
+	if geminiResp.UsageMetadata != nil {
+		completionResp.Usage = &struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		}{
+			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
+			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
+		}
+	}
+
+	return completionResp, nil
+}
+
+// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
+func (p *googleProvider) buildEmbeddingRequest(ctx context.Context, apiKey string, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
+	// Use provided model or default to text-embedding-004
+	model := req.Model
+	if model == "" {
+		model = "text-embedding-004"
+	}
+
+	body := GoogleEmbeddingRequest{
+		Content: GeminiContent{
+			Parts: []GeminiPart{
+				{Text: req.Input},
+			},
+		},
+	}
+
+	// Build the base URL with model
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":embedContent"
+	}
+
+	var googleResp GoogleEmbeddingResponse
+	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
+		httpReq.Header.Set("x-goog-api-key", apiKey)
+	}, body, &googleResp)
+	if err != nil {
+		return nil, fmt.Errorf("Google embedding API call failed: %w", err)
+	}
+
+	// Check for errors in the response
+	if googleResp.Error != nil {
+		return nil, fmt.Errorf("Google embedding API error: %s", googleResp.Error.Message)
+	}
+
+	// Convert to unified response
+	unifiedResp := &UnifiedEmbeddingResponse{
+		Object: "list",
+		Data: make([]struct {
+			Object    string    `json:"object,omitempty"`
+			Embedding []float64 `json:"embedding"`
+			Index     int       `json:"index"`
+		}, 1),
+		Model: model,
+	}
+
+	unifiedResp.Data[0].Object = "embedding"
+	unifiedResp.Data[0].Embedding = googleResp.Embedding.Values
+	unifiedResp.Data[0].Index = 0
+
+	return unifiedResp, nil
+}
+
+// buildRerankRequest builds and executes a reranking request, returning a unified response
+// Google does not support reranking, so this returns an error
+func (p *googleProvider) buildRerankRequest(ctx context.Context, apiKey string, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
+	return nil, fmt.Errorf("Google does not support reranking API")
+}
+
+// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
+func (p *googleProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp)
+}
+
+// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
+func (p *googleProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(resp)
+}
+
+// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
+// Google does not support reranking, so this returns an error
+func (p *googleProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
+	return fmt.Errorf("Google does not support reranking API")
+}
