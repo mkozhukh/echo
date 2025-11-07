@@ -2,7 +2,9 @@ package echo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
@@ -146,4 +148,34 @@ func (p *mockProvider) reRank(ctx context.Context, apiKey string, query string, 
 			"num_docs":  len(documents),
 		},
 	}, nil
+}
+
+// parseCompletionRequest parses an HTTP request into a CompletionRequest
+// For mock provider, this accepts OpenAI format directly
+func (p *mockProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+	var completionReq CompletionRequest
+	if err := json.NewDecoder(req.Body).Decode(&completionReq); err != nil {
+		return nil, fmt.Errorf("failed to parse mock completion request: %w", err)
+	}
+	return &completionReq, nil
+}
+
+// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
+// For mock provider, this accepts OpenAI format directly
+func (p *mockProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+	var embeddingReq EmbeddingRequest
+	if err := json.NewDecoder(req.Body).Decode(&embeddingReq); err != nil {
+		return nil, fmt.Errorf("failed to parse mock embedding request: %w", err)
+	}
+	return &embeddingReq, nil
+}
+
+// parseRerankRequest parses an HTTP request into a RerankRequest
+// For mock provider, this accepts Voyage format directly
+func (p *mockProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
+	var rerankReq RerankRequest
+	if err := json.NewDecoder(req.Body).Decode(&rerankReq); err != nil {
+		return nil, fmt.Errorf("failed to parse mock rerank request: %w", err)
+	}
+	return &rerankReq, nil
 }

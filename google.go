@@ -334,3 +334,97 @@ func (p *googleProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 func (p *googleProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("Google does not support reranking API")
 }
+
+// parseCompletionRequest parses an HTTP request into a CompletionRequest
+// Converts from Gemini format to OpenAI-compatible format
+func (p *googleProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+	var geminiReq GeminiRequest
+	if err := json.NewDecoder(req.Body).Decode(&geminiReq); err != nil {
+		return nil, fmt.Errorf("failed to parse Gemini completion request: %w", err)
+	}
+
+	// Convert Gemini contents to OpenAI messages
+	messages := make([]OpenAIMessage, 0, len(geminiReq.Contents)+1)
+
+	// Add system instruction as first message if present
+	if geminiReq.SystemInstruction != nil && len(geminiReq.SystemInstruction.Parts) > 0 {
+		// Combine all parts into a single system message
+		var systemContent string
+		for _, part := range geminiReq.SystemInstruction.Parts {
+			systemContent += part.Text
+		}
+		messages = append(messages, OpenAIMessage{
+			Role:    "system",
+			Content: systemContent,
+		})
+	}
+
+	// Convert user/model messages
+	for _, content := range geminiReq.Contents {
+		// Combine all parts into a single message
+		var messageContent string
+		for _, part := range content.Parts {
+			messageContent += part.Text
+		}
+
+		// Map Gemini roles to OpenAI roles
+		role := content.Role
+		if role == "model" {
+			role = "assistant"
+		}
+
+		messages = append(messages, OpenAIMessage{
+			Role:    role,
+			Content: messageContent,
+		})
+	}
+
+	// Extract model name from request (if available, otherwise empty)
+	model := ""
+
+	// Extract temperature and max tokens from generation config
+	var temperature *float64
+	var maxTokens *int
+	if geminiReq.GenerationConfig != nil {
+		temperature = geminiReq.GenerationConfig.Temperature
+		maxTokens = geminiReq.GenerationConfig.MaxOutputTokens
+	}
+
+	completionReq := &CompletionRequest{
+		Model:       model,
+		Temperature: temperature,
+		MaxTokens:   maxTokens,
+		Messages:    messages,
+		Stream:      false, // Default, can't determine from request
+	}
+
+	return completionReq, nil
+}
+
+// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
+// Converts from Google embedding format to OpenAI-compatible format
+func (p *googleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+	var googleReq GoogleEmbeddingRequest
+	if err := json.NewDecoder(req.Body).Decode(&googleReq); err != nil {
+		return nil, fmt.Errorf("failed to parse Google embedding request: %w", err)
+	}
+
+	// Combine all parts into a single input string
+	var input string
+	for _, part := range googleReq.Content.Parts {
+		input += part.Text
+	}
+
+	embeddingReq := &EmbeddingRequest{
+		Model: "", // Model is typically in the URL for Google, not in the request body
+		Input: input,
+	}
+
+	return embeddingReq, nil
+}
+
+// parseRerankRequest parses an HTTP request into a RerankRequest
+// Google does not support reranking, so this returns an error
+func (p *googleProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
+	return nil, fmt.Errorf("Google does not support reranking API")
+}

@@ -45,6 +45,45 @@ type RerankResponse struct {
 	Metadata Metadata  `json:"metadata,omitempty"`
 }
 
+// Unified request structures for parsing HTTP requests
+// Using OpenAI format as the common format to minimize data copying
+
+// CompletionRequest represents a unified completion request
+// Based on OpenAI's chat completion format
+type CompletionRequest struct {
+	Model         string          `json:"model"`
+	Temperature   *float64        `json:"temperature,omitempty"`
+	MaxTokens     *int            `json:"max_completion_tokens,omitempty"`
+	Messages      []OpenAIMessage `json:"messages"`
+	Stream        bool            `json:"stream,omitempty"`
+	StreamOptions *struct {
+		IncludeUsage bool `json:"include_usage"`
+	} `json:"stream_options,omitempty"`
+}
+
+// OpenAIMessage represents a message in OpenAI format
+type OpenAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// EmbeddingRequest represents a unified embedding request
+// Based on OpenAI's embedding format
+type EmbeddingRequest struct {
+	Model string `json:"model"`
+	Input string `json:"input"`
+}
+
+// RerankRequest represents a unified reranking request
+// Based on Voyage AI's rerank format
+type RerankRequest struct {
+	Query      string   `json:"query"`
+	Documents  []string `json:"documents"`
+	Model      string   `json:"model"`
+	TopK       *int     `json:"top_k,omitempty"`
+	Truncation *bool    `json:"truncation,omitempty"`
+}
+
 // CallOption allows optional parameters for calls
 type CallOption func(*CallConfig)
 

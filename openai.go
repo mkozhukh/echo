@@ -11,11 +11,6 @@ import (
 	"strings"
 )
 
-type OpenAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
 type OpenRouterProvider struct {
 	Order          []string `json:"order"`
 	Only           []string `json:"only"`
@@ -366,5 +361,31 @@ func (p *openAIProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 // reRank implements the provider interface for OpenAI
 // Note: OpenAI does not currently support reranking API
 func (p *openAIProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("OpenAI does not support reranking API")
+}
+
+// parseCompletionRequest parses an HTTP request into a CompletionRequest
+// For OpenAI, this is a direct JSON parse since we use OpenAI format as the common format
+func (p *openAIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+	var completionReq CompletionRequest
+	if err := json.NewDecoder(req.Body).Decode(&completionReq); err != nil {
+		return nil, fmt.Errorf("failed to parse completion request: %w", err)
+	}
+	return &completionReq, nil
+}
+
+// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
+// For OpenAI, this is a direct JSON parse since we use OpenAI format as the common format
+func (p *openAIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+	var embeddingReq EmbeddingRequest
+	if err := json.NewDecoder(req.Body).Decode(&embeddingReq); err != nil {
+		return nil, fmt.Errorf("failed to parse embedding request: %w", err)
+	}
+	return &embeddingReq, nil
+}
+
+// parseRerankRequest parses an HTTP request into a RerankRequest
+// OpenAI does not support reranking, so this returns an error
+func (p *openAIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
 	return nil, fmt.Errorf("OpenAI does not support reranking API")
 }

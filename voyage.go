@@ -2,6 +2,7 @@ package echo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 )
@@ -168,4 +169,37 @@ func (p *voyageProvider) reRank(ctx context.Context, apiKey string, query string
 	}
 
 	return response, nil
+}
+
+// parseCompletionRequest parses an HTTP request into a CompletionRequest
+// Voyage AI only supports embeddings and reranking, not chat completions
+func (p *voyageProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
+	return nil, fmt.Errorf("Voyage AI only supports embeddings and reranking, not chat completions")
+}
+
+// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
+// Converts from Voyage AI format to OpenAI-compatible format
+func (p *voyageProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
+	var voyageReq VoyageEmbeddingRequest
+	if err := json.NewDecoder(req.Body).Decode(&voyageReq); err != nil {
+		return nil, fmt.Errorf("failed to parse Voyage embedding request: %w", err)
+	}
+
+	embeddingReq := &EmbeddingRequest{
+		Model: voyageReq.Model,
+		Input: voyageReq.Input,
+	}
+
+	return embeddingReq, nil
+}
+
+// parseRerankRequest parses an HTTP request into a RerankRequest
+// For Voyage AI, this is a direct JSON parse since we use Voyage format for RerankRequest
+func (p *voyageProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
+	var rerankReq RerankRequest
+	if err := json.NewDecoder(req.Body).Decode(&rerankReq); err != nil {
+		return nil, fmt.Errorf("failed to parse Voyage rerank request: %w", err)
+	}
+
+	return &rerankReq, nil
 }

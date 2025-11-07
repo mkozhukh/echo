@@ -3,6 +3,7 @@ package echo
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 )
@@ -13,6 +14,11 @@ type provider interface {
 	streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error)
 	getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error)
 	reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
+
+	// Parse HTTP requests into unified request structures
+	parseCompletionRequest(req *http.Request) (*CompletionRequest, error)
+	parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error)
+	parseRerankRequest(req *http.Request) (*RerankRequest, error)
 }
 
 // CommonClient is the main client that delegates to appropriate providers
