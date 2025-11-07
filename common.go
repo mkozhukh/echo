@@ -12,6 +12,7 @@ type provider interface {
 	call(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*Response, error)
 	streamCall(ctx context.Context, apiKey string, messages []Message, cfg CallConfig) (*StreamResponse, error)
 	getEmbeddings(ctx context.Context, apiKey string, text string, cfg CallConfig) (*EmbeddingResponse, error)
+	reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
 }
 
 // CommonClient is the main client that delegates to appropriate providers
@@ -122,6 +123,15 @@ func (c *CommonClient) GetEmbeddings(ctx context.Context, text string, opts ...C
 		return nil, err
 	}
 	return p.getEmbeddings(ctx, apiKey, text, cfg)
+}
+
+// ReRank implements the Client interface
+func (c *CommonClient) ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error) {
+	p, apiKey, cfg, err := c.prepareCall(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return p.reRank(ctx, apiKey, query, documents, cfg)
 }
 
 func (c *CommonClient) resolveAPIKey(apiKey string, providerName string) string {

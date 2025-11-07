@@ -362,3 +362,9 @@ func (p *openAIProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 
 	return response, nil
 }
+
+// reRank implements the provider interface for OpenAI
+// Note: OpenAI does not currently support reranking API
+func (p *openAIProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("OpenAI does not support reranking API")
+}

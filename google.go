@@ -328,3 +328,9 @@ func (p *googleProvider) getEmbeddings(ctx context.Context, apiKey string, text 
 
 	return response, nil
 }
+
+// reRank implements the provider interface for Google
+// Note: Google does not currently support reranking API
+func (p *googleProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("Google does not support reranking API")
+}

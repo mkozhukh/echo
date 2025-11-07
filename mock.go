@@ -115,3 +115,35 @@ func (p *mockProvider) getEmbeddings(ctx context.Context, apiKey string, text st
 		},
 	}, nil
 }
+
+// reRank implements the provider interface for mock reranking
+// Returns mock relevance scores for testing purposes
+func (p *mockProvider) reRank(ctx context.Context, apiKey string, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
+	// Create simple mock scores based on document length similarity to query
+	queryLen := float64(len(query))
+	scores := make([]float64, len(documents))
+
+	for i, doc := range documents {
+		docLen := float64(len(doc))
+		// Score based on length similarity (0.0 to 1.0)
+		// Higher score for similar length documents
+		diff := queryLen - docLen
+		if diff < 0 {
+			diff = -diff
+		}
+		score := 1.0 - (diff / (queryLen + docLen + 1))
+		if score < 0 {
+			score = 0
+		}
+		scores[i] = score
+	}
+
+	return &RerankResponse{
+		Scores: scores,
+		Metadata: Metadata{
+			"mock":      true,
+			"query_len": len(query),
+			"num_docs":  len(documents),
+		},
+	}, nil
+}
