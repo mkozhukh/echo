@@ -150,15 +150,22 @@ type UnifiedRerankResponse struct {
 // CallOption allows optional parameters for calls
 type CallOption func(*CallConfig)
 
+// StructuredOutputConfig holds configuration for structured JSON output
+type StructuredOutputConfig struct {
+	Name   string // Name/identifier for the schema (required by OpenAI, Anthropic)
+	Schema any    // JSON Schema as map[string]any
+}
+
 // CallConfig holds optional call parameters
 type CallConfig struct {
 	BaseURL  string
 	Model    string
 	EndPoint string
 
-	Temperature *float32
-	MaxTokens   *int
-	SystemMsg   string
+	Temperature      *float32
+	MaxTokens        *int
+	SystemMsg        string
+	StructuredOutput *StructuredOutputConfig
 }
 
 func WithTemperature(temp float32) CallOption {
@@ -194,5 +201,17 @@ func WithBaseURL(url string) CallOption {
 func WithEndPoint(endpoint string) CallOption {
 	return func(cfg *CallConfig) {
 		cfg.EndPoint = endpoint
+	}
+}
+
+// WithStructuredOutput enables structured JSON output conforming to the provided schema.
+// The name parameter identifies the schema (required by OpenAI and Anthropic).
+// The schema parameter should be a JSON Schema as map[string]any.
+func WithStructuredOutput(name string, schema any) CallOption {
+	return func(cfg *CallConfig) {
+		cfg.StructuredOutput = &StructuredOutputConfig{
+			Name:   name,
+			Schema: schema,
+		}
 	}
 }

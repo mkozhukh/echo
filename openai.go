@@ -31,7 +31,21 @@ type OpenAIRequest struct {
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
-	Provider *OpenRouterProvider `json:"provider,omitempty"`
+	Provider       *OpenRouterProvider   `json:"provider,omitempty"`
+	ResponseFormat *OpenAIResponseFormat `json:"response_format,omitempty"`
+}
+
+// OpenAIResponseFormat specifies the format for model output
+type OpenAIResponseFormat struct {
+	Type       string                  `json:"type"`
+	JSONSchema *OpenAIJSONSchemaConfig `json:"json_schema,omitempty"`
+}
+
+// OpenAIJSONSchemaConfig specifies JSON schema for structured output
+type OpenAIJSONSchemaConfig struct {
+	Name   string `json:"name"`
+	Strict bool   `json:"strict,omitempty"`
+	Schema any    `json:"schema"`
 }
 
 // OpenAIMessage represents a message in OpenAI format
@@ -141,6 +155,18 @@ func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (O
 			Only:           order,
 			Order:          order,
 			AllowFallbacks: true,
+		}
+	}
+
+	// Add structured output response format if configured
+	if cfg.StructuredOutput != nil {
+		req.ResponseFormat = &OpenAIResponseFormat{
+			Type: "json_schema",
+			JSONSchema: &OpenAIJSONSchemaConfig{
+				Name:   cfg.StructuredOutput.Name,
+				Strict: true,
+				Schema: cfg.StructuredOutput.Schema,
+			},
 		}
 	}
 

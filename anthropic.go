@@ -13,12 +13,19 @@ type AnthropicMessage struct {
 }
 
 type AnthropicRequest struct {
-	Model       string             `json:"model"`
-	Messages    []AnthropicMessage `json:"messages"`
-	MaxTokens   int                `json:"max_tokens"`
-	Temperature *float32           `json:"temperature,omitempty"`
-	System      string             `json:"system,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
+	Model        string                 `json:"model"`
+	Messages     []AnthropicMessage     `json:"messages"`
+	MaxTokens    int                    `json:"max_tokens"`
+	Temperature  *float32               `json:"temperature,omitempty"`
+	System       string                 `json:"system,omitempty"`
+	Stream       bool                   `json:"stream,omitempty"`
+	OutputFormat *AnthropicOutputFormat `json:"output_format,omitempty"`
+}
+
+// AnthropicOutputFormat specifies the output format for structured output
+type AnthropicOutputFormat struct {
+	Type   string `json:"type"`   // "json_schema"
+	Schema any    `json:"schema"` // JSON Schema
 }
 
 type AnthropicError struct {
@@ -29,8 +36,8 @@ type AnthropicError struct {
 type AnthropicResponse struct {
 	Error   *AnthropicError `json:"error,omitempty"`
 	Content []struct {
-		Text string `json:"text"`
 		Type string `json:"type"`
+		Text string `json:"text"`
 	} `json:"content"`
 	StopReason string `json:"stop_reason"`
 	Usage      struct {
@@ -164,6 +171,14 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 		body.System = systemMsg
 	}
 
+	// Handle structured output via native output_format API
+	if cfg.StructuredOutput != nil {
+		body.OutputFormat = &AnthropicOutputFormat{
+			Type:   "json_schema",
+			Schema: cfg.StructuredOutput.Schema,
+		}
+	}
+
 	return body, nil
 }
 
@@ -184,6 +199,10 @@ func (p *AnthropicProvider) call(ctx context.Context, messages []Message, cfg Ca
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		req.Header.Set("x-api-key", p.Key)
+		// Add beta header for structured outputs
+		if cfg.StructuredOutput != nil {
+			req.Header.Set("anthropic-beta", "structured-outputs-2025-11-13")
+		}
 	}, body, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("api call failed: %w", err)
@@ -234,6 +253,10 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 	respBody, err := streamHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		req.Header.Set("x-api-key", p.Key)
+		// Add beta header for structured outputs
+		if cfg.StructuredOutput != nil {
+			req.Header.Set("anthropic-beta", "structured-outputs-2025-11-13")
+		}
 	}, body)
 	if err != nil {
 		return nil, fmt.Errorf("Anthropic streaming API call failed: %w", err)

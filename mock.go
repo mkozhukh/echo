@@ -41,11 +41,20 @@ func (p *MockProvider) call(ctx context.Context, messages []Message, cfg CallCon
 		return nil, fmt.Errorf("invalid message chain: %w", err)
 	}
 
+	responseText := p.getMessages(messages, cfg)
+
+	// If structured output is requested, return mock JSON
+	if cfg.StructuredOutput != nil {
+		responseText = fmt.Sprintf(`{"mock_response": true, "schema_name": %q}`,
+			cfg.StructuredOutput.Name)
+	}
+
 	return &Response{
-		Text: p.getMessages(messages, cfg),
+		Text: responseText,
 		Metadata: Metadata{
-			"mock":          true,
-			"message_count": len(messages),
+			"mock":              true,
+			"message_count":     len(messages),
+			"structured_output": cfg.StructuredOutput != nil,
 		},
 	}, nil
 }
@@ -67,13 +76,20 @@ func (p *MockProvider) streamCall(ctx context.Context, messages []Message, cfg C
 		// Send metadata in first chunk
 		ch <- StreamChunk{
 			Meta: &Metadata{
-				"mock":          true,
-				"message_count": len(messages),
+				"mock":              true,
+				"message_count":     len(messages),
+				"structured_output": cfg.StructuredOutput != nil,
 			},
 		}
 
 		// Simulate streaming by sending the combined content in chunks
-		content := p.getMessages(messages, cfg)
+		var content string
+		if cfg.StructuredOutput != nil {
+			content = fmt.Sprintf(`{"mock_response": true, "schema_name": %q}`,
+				cfg.StructuredOutput.Name)
+		} else {
+			content = p.getMessages(messages, cfg)
+		}
 		chunkSize := 10 // Send 10 characters at a time for simulation
 
 		for i := 0; i < len(content); i += chunkSize {

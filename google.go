@@ -15,12 +15,17 @@ type GoogleProvider struct {
 
 // Gemini-specific request/response structures
 type GeminiRequest struct {
-	Contents          []GeminiContent `json:"contents"`
-	SystemInstruction *GeminiContent  `json:"systemInstruction,omitempty"`
-	GenerationConfig  *struct {
-		Temperature     *float32 `json:"temperature,omitempty"`
-		MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
-	} `json:"generationConfig,omitempty"`
+	Contents          []GeminiContent         `json:"contents"`
+	SystemInstruction *GeminiContent          `json:"systemInstruction,omitempty"`
+	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
+}
+
+// GeminiGenerationConfig contains generation parameters for Gemini requests
+type GeminiGenerationConfig struct {
+	Temperature      *float32 `json:"temperature,omitempty"`
+	MaxOutputTokens  *int     `json:"maxOutputTokens,omitempty"`
+	ResponseMimeType string   `json:"responseMimeType,omitempty"`
+	ResponseSchema   any      `json:"responseSchema,omitempty"`
 }
 
 type GeminiContent struct {
@@ -129,14 +134,17 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 		}
 	}
 
-	// Add generation config if temperature or max tokens are set
-	if cfg.Temperature != nil || cfg.MaxTokens != nil {
-		geminiReq.GenerationConfig = &struct {
-			Temperature     *float32 `json:"temperature,omitempty"`
-			MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
-		}{
+	// Add generation config if temperature, max tokens, or structured output are set
+	if cfg.Temperature != nil || cfg.MaxTokens != nil || cfg.StructuredOutput != nil {
+		geminiReq.GenerationConfig = &GeminiGenerationConfig{
 			Temperature:     cfg.Temperature,
 			MaxOutputTokens: cfg.MaxTokens,
+		}
+
+		// Add structured output configuration
+		if cfg.StructuredOutput != nil {
+			geminiReq.GenerationConfig.ResponseMimeType = "application/json"
+			geminiReq.GenerationConfig.ResponseSchema = cfg.StructuredOutput.Schema
 		}
 	}
 
@@ -469,10 +477,7 @@ func (p *GoogleProvider) buildCompletionRequest(ctx context.Context, req *Comple
 
 	// Add generation config if needed
 	if req.Temperature != nil || req.MaxTokens != nil {
-		geminiReq.GenerationConfig = &struct {
-			Temperature     *float32 `json:"temperature,omitempty"`
-			MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
-		}{
+		geminiReq.GenerationConfig = &GeminiGenerationConfig{
 			Temperature:     req.Temperature,
 			MaxOutputTokens: req.MaxTokens,
 		}
