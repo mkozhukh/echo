@@ -24,7 +24,7 @@ type OpenAIError struct {
 
 type OpenAIRequest struct {
 	Model         string          `json:"model"`
-	Temperature   *float64        `json:"temperature,omitempty"`
+	Temperature   *float32        `json:"temperature,omitempty"`
 	MaxTokens     *int            `json:"max_completion_tokens,omitempty"`
 	Messages      []OpenAIMessage `json:"messages"`
 	Stream        bool            `json:"stream,omitempty"`
@@ -306,7 +306,7 @@ type OpenAIEmbeddingRequest struct {
 type OpenAIEmbeddingResponse struct {
 	Error *OpenAIError `json:"error,omitempty"`
 	Data  []struct {
-		Embedding []float64 `json:"embedding"`
+		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
 	Usage *struct {
@@ -508,7 +508,7 @@ func (p *OpenAIProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 		Object: "list",
 		Data: make([]struct {
 			Object    string    `json:"object,omitempty"`
-			Embedding []float64 `json:"embedding"`
+			Embedding []float32 `json:"embedding"`
 			Index     int       `json:"index"`
 		}, len(openaiResp.Data)),
 		Model: model,

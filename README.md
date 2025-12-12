@@ -201,7 +201,7 @@ resp, err := client.Call(ctx, echo.QuickMessage("Write a story"),
 ### Available Options
 
 - `WithModel(string)` - Override model for this call
-- `WithTemperature(float64)` - Control randomness (0.0 - 1.0)
+- `WithTemperature(float32)` - Control randomness (0.0 - 1.0)
 - `WithMaxTokens(int)` - Limit response length
 - `WithSystemMessage(string)` - Set or override system prompt (overrides any system message in the message chain)
 - `WithBaseURL(string)` - Override the API base URL (useful for custom endpoints)

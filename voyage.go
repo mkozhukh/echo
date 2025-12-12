@@ -27,7 +27,7 @@ type VoyageError struct {
 type VoyageEmbeddingResponse struct {
 	Error *VoyageError `json:"error,omitempty"`
 	Data  []struct {
-		Embedding []float64 `json:"embedding"`
+		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
 	Model string `json:"model"`
@@ -49,10 +49,12 @@ type VoyageRerankResponse struct {
 	Results []struct {
 		Index          int     `json:"index"`
 		Document       string  `json:"document"`
-		RelevanceScore float64 `json:"relevance_score"`
-	} `json:"results"`
-	TotalTokens int    `json:"total_tokens"`
-	Model       string `json:"model"`
+		RelevanceScore float32 `json:"relevance_score"`
+	} `json:"data"`
+	Usage struct {
+		TotalTokens int `json:"total_tokens"`
+	} `json:"usage"`
+	Model string `json:"model"`
 }
 
 // call implements the provider interface but returns an error
@@ -155,7 +157,7 @@ func (p *VoyageProvider) reRank(ctx context.Context, query string, documents []s
 	// Extract scores and reorder them to match the original document order
 	// The API returns results sorted by relevance, but we need to return scores
 	// in the same order as the input documents
-	scores := make([]float64, len(documents))
+	scores := make([]float32, len(documents))
 	for _, result := range resp.Results {
 		if result.Index >= 0 && result.Index < len(scores) {
 			scores[result.Index] = result.RelevanceScore
@@ -165,7 +167,7 @@ func (p *VoyageProvider) reRank(ctx context.Context, query string, documents []s
 	response := &RerankResponse{
 		Scores: scores,
 		Metadata: Metadata{
-			"total_tokens": resp.TotalTokens,
+			"total_tokens": resp.Usage.TotalTokens,
 			"model":        resp.Model,
 		},
 	}
@@ -249,7 +251,7 @@ func (p *VoyageProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 		Object: "list",
 		Data: make([]struct {
 			Object    string    `json:"object,omitempty"`
-			Embedding []float64 `json:"embedding"`
+			Embedding []float32 `json:"embedding"`
 			Index     int       `json:"index"`
 		}, len(voyageResp.Data)),
 		Model: model,
@@ -314,7 +316,7 @@ func (p *VoyageProvider) buildRerankRequest(ctx context.Context, req *RerankRequ
 		Results: make([]struct {
 			Index          int     `json:"index"`
 			Document       string  `json:"document,omitempty"`
-			RelevanceScore float64 `json:"relevance_score"`
+			RelevanceScore float32 `json:"relevance_score"`
 		}, len(voyageResp.Results)),
 		Model: model,
 	}
@@ -330,7 +332,7 @@ func (p *VoyageProvider) buildRerankRequest(ctx context.Context, req *RerankRequ
 	unifiedResp.Usage = &struct {
 		TotalTokens int `json:"total_tokens,omitempty"`
 	}{
-		TotalTokens: voyageResp.TotalTokens,
+		TotalTokens: voyageResp.Usage.TotalTokens,
 	}
 
 	return unifiedResp, nil

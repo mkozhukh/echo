@@ -18,7 +18,7 @@ type GeminiRequest struct {
 	Contents          []GeminiContent `json:"contents"`
 	SystemInstruction *GeminiContent  `json:"systemInstruction,omitempty"`
 	GenerationConfig  *struct {
-		Temperature     *float64 `json:"temperature,omitempty"`
+		Temperature     *float32 `json:"temperature,omitempty"`
 		MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 	} `json:"generationConfig,omitempty"`
 }
@@ -132,7 +132,7 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 	// Add generation config if temperature or max tokens are set
 	if cfg.Temperature != nil || cfg.MaxTokens != nil {
 		geminiReq.GenerationConfig = &struct {
-			Temperature     *float64 `json:"temperature,omitempty"`
+			Temperature     *float32 `json:"temperature,omitempty"`
 			MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 		}{
 			Temperature:     cfg.Temperature,
@@ -280,7 +280,7 @@ type GoogleEmbeddingRequest struct {
 type GoogleEmbeddingResponse struct {
 	Error     *GeminiError `json:"error,omitempty"`
 	Embedding struct {
-		Values []float64 `json:"values"`
+		Values []float32 `json:"values"`
 	} `json:"embedding"`
 }
 
@@ -386,7 +386,7 @@ func (p *GoogleProvider) parseCompletionRequest(req *http.Request) (*CompletionR
 	model := ""
 
 	// Extract temperature and max tokens from generation config
-	var temperature *float64
+	var temperature *float32
 	var maxTokens *int
 	if geminiReq.GenerationConfig != nil {
 		temperature = geminiReq.GenerationConfig.Temperature
@@ -470,7 +470,7 @@ func (p *GoogleProvider) buildCompletionRequest(ctx context.Context, req *Comple
 	// Add generation config if needed
 	if req.Temperature != nil || req.MaxTokens != nil {
 		geminiReq.GenerationConfig = &struct {
-			Temperature     *float64 `json:"temperature,omitempty"`
+			Temperature     *float32 `json:"temperature,omitempty"`
 			MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 		}{
 			Temperature:     req.Temperature,
@@ -578,7 +578,7 @@ func (p *GoogleProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 		Object: "list",
 		Data: make([]struct {
 			Object    string    `json:"object,omitempty"`
-			Embedding []float64 `json:"embedding"`
+			Embedding []float32 `json:"embedding"`
 			Index     int       `json:"index"`
 		}, 1),
 		Model: model,

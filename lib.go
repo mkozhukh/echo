@@ -9,7 +9,7 @@ import (
 type Client interface {
 	// SetProvider sets a provider for the client
 	SetProvider(name string, provider Provider)
-	// Call sends a message chain and returns the response
+	// Complete sends a message chain and returns the response
 	Complete(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error)
 	// StreamComplete sends a message chain and returns the response as a stream
 	StreamComplete(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error)
@@ -17,23 +17,28 @@ type Client interface {
 	GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error)
 	// ReRank reranks documents based on relevance to query
 	ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error)
+}
 
-	// ParseCompletionRequest parses a completion request and returns a CompletionRequest
+// ProxyClient extends Client with HTTP proxy capabilities for building LLM proxies
+// that can parse requests in one provider format and forward to another
+type ProxyClient interface {
+	Client
+	// ParseComplete parses a completion request from HTTP request
 	ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error)
-	// ExecComplete builds a completion request and returns a CompletionResponse
-	ExecComplete(ctx context.Context, CompletionRequest *CompletionRequest, opts ...CallOption) (*CompletionResponse, error)
+	// ExecComplete executes a completion request and returns a CompletionResponse
+	ExecComplete(ctx context.Context, req *CompletionRequest, opts ...CallOption) (*CompletionResponse, error)
 	// WriteComplete writes a completion response to the response writer
 	WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error
-	// ParseEmbeddingRequest parses an embedding request and returns an EmbeddingRequest
+	// ParseEmbedding parses an embedding request from HTTP request
 	ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error)
-	// ExecEmbedding builds an embedding request and returns an EmbeddingResponse
-	ExecEmbedding(ctx context.Context, EmbeddingRequest *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error)
+	// ExecEmbedding executes an embedding request and returns a UnifiedEmbeddingResponse
+	ExecEmbedding(ctx context.Context, req *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error)
 	// WriteEmbedding writes an embedding response to the response writer
 	WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error
-	// ParseRerankRequest parses a rerank request and returns a RerankRequest
+	// ParseRerank parses a rerank request from HTTP request
 	ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error)
-	// ExecRerank builds a rerank request and returns a RerankResponse
-	ExecRerank(ctx context.Context, RerankRequest *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error)
+	// ExecRerank executes a rerank request and returns a UnifiedRerankResponse
+	ExecRerank(ctx context.Context, req *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error)
 	// WriteRerank writes a rerank response to the response writer
 	WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error
 }
@@ -58,13 +63,13 @@ type StreamResponse struct {
 
 // EmbeddingResponse represents the embedding response
 type EmbeddingResponse struct {
-	Embedding []float64 `json:"embedding"`
+	Embedding []float32 `json:"embedding"`
 	Metadata  Metadata  `json:"metadata,omitempty"`
 }
 
 // RerankResponse represents the rerank response
 type RerankResponse struct {
-	Scores   []float64 `json:"scores"`
+	Scores   []float32 `json:"scores"`
 	Metadata Metadata  `json:"metadata,omitempty"`
 }
 
@@ -118,7 +123,7 @@ type UnifiedEmbeddingResponse struct {
 	Object string `json:"object,omitempty"`
 	Data   []struct {
 		Object    string    `json:"object,omitempty"`
-		Embedding []float64 `json:"embedding"`
+		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
 	Model string `json:"model,omitempty"`
@@ -134,7 +139,7 @@ type UnifiedRerankResponse struct {
 	Results []struct {
 		Index          int     `json:"index"`
 		Document       string  `json:"document,omitempty"`
-		RelevanceScore float64 `json:"relevance_score"`
+		RelevanceScore float32 `json:"relevance_score"`
 	} `json:"results"`
 	Model string `json:"model,omitempty"`
 	Usage *struct {
@@ -151,12 +156,12 @@ type CallConfig struct {
 	Model    string
 	EndPoint string
 
-	Temperature *float64
+	Temperature *float32
 	MaxTokens   *int
 	SystemMsg   string
 }
 
-func WithTemperature(temp float64) CallOption {
+func WithTemperature(temp float32) CallOption {
 	return func(cfg *CallConfig) {
 		cfg.Temperature = &temp
 	}

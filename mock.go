@@ -100,58 +100,15 @@ func (p *MockProvider) streamCall(ctx context.Context, messages []Message, cfg C
 
 // getEmbeddings implements the provider interface for mock embeddings
 func (p *MockProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
-	// Create a simple mock embedding based on text length
-	// For testing purposes, create a small vector of predictable values
-	textLen := float64(len(text))
-	embedding := []float64{
-		textLen / 100.0,  // Normalized length
-		0.5,              // Fixed value
-		textLen / 1000.0, // Another normalized length
-	}
-
-	return &EmbeddingResponse{
-		Embedding: embedding,
-		Metadata: Metadata{
-			"mock":        true,
-			"text_length": len(text),
-		},
-	}, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 // reRank implements the provider interface for mock reranking
-// Returns mock relevance scores for testing purposes
 func (p *MockProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	// Create simple mock scores based on document length similarity to query
-	queryLen := float64(len(query))
-	scores := make([]float64, len(documents))
-
-	for i, doc := range documents {
-		docLen := float64(len(doc))
-		// Score based on length similarity (0.0 to 1.0)
-		// Higher score for similar length documents
-		diff := queryLen - docLen
-		if diff < 0 {
-			diff = -diff
-		}
-		score := 1.0 - (diff / (queryLen + docLen + 1))
-		if score < 0 {
-			score = 0
-		}
-		scores[i] = score
-	}
-
-	return &RerankResponse{
-		Scores: scores,
-		Metadata: Metadata{
-			"mock":      true,
-			"query_len": len(query),
-			"num_docs":  len(documents),
-		},
-	}, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
-// For mock provider, this accepts OpenAI format directly
 func (p *MockProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
 	var completionReq CompletionRequest
 	if err := json.NewDecoder(req.Body).Decode(&completionReq); err != nil {
@@ -161,23 +118,13 @@ func (p *MockProvider) parseCompletionRequest(req *http.Request) (*CompletionReq
 }
 
 // parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-// For mock provider, this accepts OpenAI format directly
 func (p *MockProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	var embeddingReq EmbeddingRequest
-	if err := json.NewDecoder(req.Body).Decode(&embeddingReq); err != nil {
-		return nil, fmt.Errorf("failed to parse mock embedding request: %w", err)
-	}
-	return &embeddingReq, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 // parseRerankRequest parses an HTTP request into a RerankRequest
-// For mock provider, this accepts Voyage format directly
 func (p *MockProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	var rerankReq RerankRequest
-	if err := json.NewDecoder(req.Body).Decode(&rerankReq); err != nil {
-		return nil, fmt.Errorf("failed to parse mock rerank request: %w", err)
-	}
-	return &rerankReq, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
@@ -228,87 +175,19 @@ func (p *MockProvider) buildCompletionRequest(ctx context.Context, req *Completi
 
 // buildEmbeddingRequest builds and executes an embedding request, returning a unified response
 func (p *MockProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	// Create mock embedding based on text length
-	textLen := float64(len(req.Input))
-	embedding := []float64{
-		textLen / 100.0,  // Normalized length
-		0.5,              // Fixed value
-		textLen / 1000.0, // Another normalized length
-	}
-
-	// Create unified response
-	unifiedResp := &UnifiedEmbeddingResponse{
-		Object: "list",
-		Data: make([]struct {
-			Object    string    `json:"object,omitempty"`
-			Embedding []float64 `json:"embedding"`
-			Index     int       `json:"index"`
-		}, 1),
-		Model: req.Model,
-	}
-
-	unifiedResp.Data[0].Object = "embedding"
-	unifiedResp.Data[0].Embedding = embedding
-	unifiedResp.Data[0].Index = 0
-
-	// Add mock usage
-	unifiedResp.Usage = &struct {
-		PromptTokens int `json:"prompt_tokens"`
-		TotalTokens  int `json:"total_tokens"`
-	}{
-		PromptTokens: len(req.Input) / 4,
-		TotalTokens:  len(req.Input) / 4,
-	}
-
-	return unifiedResp, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 // buildRerankRequest builds and executes a reranking request, returning a unified response
 func (p *MockProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	// Create mock scores based on document length similarity to query
-	queryLen := float64(len(req.Query))
-
-	// Create unified response
-	unifiedResp := &UnifiedRerankResponse{
-		Results: make([]struct {
-			Index          int     `json:"index"`
-			Document       string  `json:"document,omitempty"`
-			RelevanceScore float64 `json:"relevance_score"`
-		}, len(req.Documents)),
-		Model: req.Model,
-	}
-
-	// Calculate scores
-	for i, doc := range req.Documents {
-		docLen := float64(len(doc))
-		diff := queryLen - docLen
-		if diff < 0 {
-			diff = -diff
-		}
-		score := 1.0 - (diff / (queryLen + docLen + 1))
-		if score < 0 {
-			score = 0
-		}
-
-		unifiedResp.Results[i].Index = i
-		unifiedResp.Results[i].Document = doc
-		unifiedResp.Results[i].RelevanceScore = score
-	}
-
-	// Add mock usage
-	unifiedResp.Usage = &struct {
-		TotalTokens int `json:"total_tokens,omitempty"`
-	}{
-		TotalTokens: len(req.Query)/4 + len(req.Documents)*10,
-	}
-
-	return unifiedResp, nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
 func (p *MockProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
+	w.Header().Set("Content-Type", "plain/text")
+	_, err := w.Write([]byte(resp.Choices[0].Message.Content))
+	return err
 }
 
 // writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
