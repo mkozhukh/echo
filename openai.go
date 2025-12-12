@@ -31,8 +31,9 @@ type OpenAIRequest struct {
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
-	Provider       *OpenRouterProvider   `json:"provider,omitempty"`
-	ResponseFormat *OpenAIResponseFormat `json:"response_format,omitempty"`
+	Provider        *OpenRouterProvider   `json:"provider,omitempty"`
+	ResponseFormat  *OpenAIResponseFormat `json:"response_format,omitempty"`
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
 }
 
 // OpenAIResponseFormat specifies the format for model output
@@ -168,6 +169,11 @@ func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (O
 				Schema: cfg.StructuredOutput.Schema,
 			},
 		}
+	}
+
+	// Add reasoning effort if configured (for o1 models)
+	if cfg.ReasoningEffort != "" {
+		req.ReasoningEffort = cfg.ReasoningEffort
 	}
 
 	return req, nil

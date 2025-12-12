@@ -166,6 +166,7 @@ type CallConfig struct {
 	MaxTokens        *int
 	SystemMsg        string
 	StructuredOutput *StructuredOutputConfig
+	ReasoningEffort  string // "low", "medium", "high" - controls thinking/reasoning level
 }
 
 func WithTemperature(temp float32) CallOption {
@@ -213,5 +214,16 @@ func WithStructuredOutput(name string, schema any) CallOption {
 			Name:   name,
 			Schema: schema,
 		}
+	}
+}
+
+// WithReasoningEffort controls the thinking/reasoning level for models that support it.
+// Valid values: "low", "medium", "high"
+// - OpenAI: uses reasoning_effort parameter (for o1 models)
+// - Anthropic: uses output_config.effort (claude-opus-4-5)
+// - Google: uses thinkingConfig.thinkingLevel (gemini-3 models)
+func WithReasoningEffort(effort string) CallOption {
+	return func(cfg *CallConfig) {
+		cfg.ReasoningEffort = effort
 	}
 }

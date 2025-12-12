@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type AnthropicMessage struct {
@@ -20,12 +21,18 @@ type AnthropicRequest struct {
 	System       string                 `json:"system,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
 	OutputFormat *AnthropicOutputFormat `json:"output_format,omitempty"`
+	OutputConfig *AnthropicOutputConfig `json:"output_config,omitempty"`
 }
 
 // AnthropicOutputFormat specifies the output format for structured output
 type AnthropicOutputFormat struct {
 	Type   string `json:"type"`   // "json_schema"
 	Schema any    `json:"schema"` // JSON Schema
+}
+
+// AnthropicOutputConfig specifies output configuration for reasoning effort
+type AnthropicOutputConfig struct {
+	Effort string `json:"effort"` // "low", "medium", "high"
 }
 
 type AnthropicError struct {
@@ -179,6 +186,13 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 		}
 	}
 
+	// Handle reasoning effort via output_config
+	if cfg.ReasoningEffort != "" {
+		body.OutputConfig = &AnthropicOutputConfig{
+			Effort: cfg.ReasoningEffort,
+		}
+	}
+
 	return body, nil
 }
 
@@ -199,9 +213,16 @@ func (p *AnthropicProvider) call(ctx context.Context, messages []Message, cfg Ca
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		req.Header.Set("x-api-key", p.Key)
-		// Add beta header for structured outputs
+		// Add beta headers for features that require them
+		var betaFeatures []string
 		if cfg.StructuredOutput != nil {
-			req.Header.Set("anthropic-beta", "structured-outputs-2025-11-13")
+			betaFeatures = append(betaFeatures, "structured-outputs-2025-11-13")
+		}
+		if cfg.ReasoningEffort != "" {
+			betaFeatures = append(betaFeatures, "effort-2025-11-24")
+		}
+		if len(betaFeatures) > 0 {
+			req.Header.Set("anthropic-beta", strings.Join(betaFeatures, ","))
 		}
 	}, body, &resp)
 	if err != nil {
@@ -253,9 +274,16 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 	respBody, err := streamHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		req.Header.Set("x-api-key", p.Key)
-		// Add beta header for structured outputs
+		// Add beta headers for features that require them
+		var betaFeatures []string
 		if cfg.StructuredOutput != nil {
-			req.Header.Set("anthropic-beta", "structured-outputs-2025-11-13")
+			betaFeatures = append(betaFeatures, "structured-outputs-2025-11-13")
+		}
+		if cfg.ReasoningEffort != "" {
+			betaFeatures = append(betaFeatures, "effort-2025-11-24")
+		}
+		if len(betaFeatures) > 0 {
+			req.Header.Set("anthropic-beta", strings.Join(betaFeatures, ","))
 		}
 	}, body)
 	if err != nil {

@@ -22,10 +22,16 @@ type GeminiRequest struct {
 
 // GeminiGenerationConfig contains generation parameters for Gemini requests
 type GeminiGenerationConfig struct {
-	Temperature      *float32 `json:"temperature,omitempty"`
-	MaxOutputTokens  *int     `json:"maxOutputTokens,omitempty"`
-	ResponseMimeType string   `json:"responseMimeType,omitempty"`
-	ResponseSchema   any      `json:"responseSchema,omitempty"`
+	Temperature      *float32              `json:"temperature,omitempty"`
+	MaxOutputTokens  *int                  `json:"maxOutputTokens,omitempty"`
+	ResponseMimeType string                `json:"responseMimeType,omitempty"`
+	ResponseSchema   any                   `json:"responseSchema,omitempty"`
+	ThinkingConfig   *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+// GeminiThinkingConfig contains thinking/reasoning configuration
+type GeminiThinkingConfig struct {
+	ThinkingLevel string `json:"thinkingLevel"` // "low", "medium", "high"
 }
 
 type GeminiContent struct {
@@ -134,8 +140,8 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 		}
 	}
 
-	// Add generation config if temperature, max tokens, or structured output are set
-	if cfg.Temperature != nil || cfg.MaxTokens != nil || cfg.StructuredOutput != nil {
+	// Add generation config if temperature, max tokens, structured output, or reasoning effort are set
+	if cfg.Temperature != nil || cfg.MaxTokens != nil || cfg.StructuredOutput != nil || cfg.ReasoningEffort != "" {
 		geminiReq.GenerationConfig = &GeminiGenerationConfig{
 			Temperature:     cfg.Temperature,
 			MaxOutputTokens: cfg.MaxTokens,
@@ -145,6 +151,13 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 		if cfg.StructuredOutput != nil {
 			geminiReq.GenerationConfig.ResponseMimeType = "application/json"
 			geminiReq.GenerationConfig.ResponseSchema = cfg.StructuredOutput.Schema
+		}
+
+		// Add thinking/reasoning configuration
+		if cfg.ReasoningEffort != "" {
+			geminiReq.GenerationConfig.ThinkingConfig = &GeminiThinkingConfig{
+				ThinkingLevel: cfg.ReasoningEffort,
+			}
 		}
 	}
 
