@@ -167,6 +167,7 @@ type CallConfig struct {
 	SystemMsg        string
 	StructuredOutput *StructuredOutputConfig
 	ReasoningEffort  string // "low", "medium", "high" - controls thinking/reasoning level
+	StoreData        *bool  // xAI: set to false to disable server-side storage (default: false)
 }
 
 func WithTemperature(temp float32) CallOption {
@@ -225,5 +226,14 @@ func WithStructuredOutput(name string, schema any) CallOption {
 func WithReasoningEffort(effort string) CallOption {
 	return func(cfg *CallConfig) {
 		cfg.ReasoningEffort = effort
+	}
+}
+
+// WithStoreData controls whether the provider stores conversation data on the server.
+// Currently only supported by xAI (Grok) - set to false to disable server-side storage.
+// Default is false for xAI to prioritize privacy.
+func WithStoreData(store bool) CallOption {
+	return func(cfg *CallConfig) {
+		cfg.StoreData = &store
 	}
 }

@@ -68,6 +68,7 @@ var knownProviders = map[string]providerRetriver{
 	"mock":       func(key string) Provider { return &MockProvider{} },
 	"openrouter": func(key string) Provider { return &OpenAIProvider{Key: key} },
 	"voyage":     func(key string) Provider { return &VoyageProvider{Key: key} },
+	"xai":        func(key string) Provider { return &XAIProvider{Key: key} },
 }
 
 func NewCommonClient(keys map[string]string, opts ...CallOption) (Client, error) {
@@ -307,13 +308,13 @@ func parseModelString(fullModelName string) (string, string, string, error) {
 
 // Model aliases for each provider
 var alises = map[string]string{
-	"openai/best":     "openai/gpt-5",
+	"openai/best":     "openai/gpt-5.2",
 	"openai/balanced": "openai/gpt-5-mini",
 	"openai/light":    "openai/gpt-5-nano",
 
-	"anthropic/best":     "anthropic/claude-opus-4-1-20250805",
-	"anthropic/balanced": "anthropic/claude-sonnet-4-20250514",
-	"anthropic/light":    "anthropic/claude-3-5-haiku-20241022",
+	"anthropic/best":     "anthropic/claude-sonnet-4-5",
+	"anthropic/balanced": "anthropic/claude-opus-4-5",
+	"anthropic/light":    "anthropic/claude-haiku-4-5",
 
 	"google/best":     "google/gemini-2.5-pro",
 	"google/balanced": "google/gemini-2.5-flash",
@@ -323,7 +324,11 @@ var alises = map[string]string{
 	"openrouter/balanced": "openrouter/openai/gpt-5-mini",
 	"openrouter/light":    "openrouter/openai/gpt-5-nano",
 
-	"voyage/best":     "voyage/voyage-3",
-	"voyage/balanced": "voyage/voyage-3-lite",
-	"voyage/light":    "voyage/voyage-3-lite",
+	"voyage/best":     "voyage/voyage-4-large",
+	"voyage/balanced": "voyage/voyage-4",
+	"voyage/light":    "voyage/voyage-4-lite",
+
+	"xai/best":     "xai/grok-4-0709",
+	"xai/balanced": "xai/grok-4-1-fast-reasoning",
+	"xai/light":    "xai/grok-4-1-fast-non-reasoning",
 }

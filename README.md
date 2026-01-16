@@ -8,6 +8,7 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 - Anthropic
 - Google
 - OpenRouter (via OpenAI-compatible API)
+- xAI (Grok)
 
 ## Installation
 
@@ -58,9 +59,10 @@ Use convenient aliases instead of full model names:
 // - balanced: Good balance of quality and speed
 // - light: Fast and economical
 
-client, _ := echo.NewClient("openai/best", "")      // Uses gpt-5
-client, _ := echo.NewClient("anthropic/balanced", "") // Uses claude-sonnet-4
+client, _ := echo.NewClient("openai/best", "")      // Uses gpt-5.2
+client, _ := echo.NewClient("anthropic/balanced", "") // Uses claude-opus-4-5
 client, _ := echo.NewClient("google/light", "")      // Uses gemini-2.5-flash
+client, _ := echo.NewClient("xai/best", "")          // Uses grok-4-0709
 ```
 
 ### Environment Variables
@@ -79,6 +81,7 @@ client, _ := echo.NewClient("", "")
 os.Setenv("OPENAI_API_KEY", "your-openai-key")
 os.Setenv("ANTHROPIC_API_KEY", "your-anthropic-key")
 os.Setenv("GOOGLE_API_KEY", "your-google-key")
+os.Setenv("XAI_API_KEY", "your-xai-key")
 
 // API key is automatically selected based on provider
 client, _ := echo.NewClient("openai/gpt-5", "")
@@ -206,6 +209,7 @@ resp, err := client.Call(ctx, echo.QuickMessage("Write a story"),
 - `WithSystemMessage(string)` - Set or override system prompt (overrides any system message in the message chain)
 - `WithBaseURL(string)` - Override the API base URL (useful for custom endpoints)
 - `WithEndPoint(string)` - Specify endpoint routing (primarily for OpenRouter provider selection)
+- `WithStoreData(bool)` - Control server-side storage (xAI only, defaults to false for privacy)
 
 ## Streaming Responses
 
@@ -257,6 +261,21 @@ client, _ := echo.NewClient("openrouter/claude-3.5-sonnet@aws", "your-openrouter
 
 // Multiple providers for fallback (comma-separated)
 client, _ := echo.NewClient("openrouter/gpt-4@azure,openai", "your-openrouter-key")
+```
+
+### Using xAI (Grok)
+
+xAI provides access to Grok models:
+
+```go
+// Basic usage
+client, _ := echo.NewClient("xai/grok-4-0709", "your-xai-key")
+
+// Server-side storage is disabled by default for privacy
+// To explicitly enable storage:
+resp, _ := client.Call(ctx, echo.QuickMessage("Hello"),
+    echo.WithStoreData(true),
+)
 ```
 
 ## License
