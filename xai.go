@@ -65,6 +65,13 @@ type XAIProvider struct {
 	Key string
 }
 
+// NewXAIClient creates a new xAI client
+func NewXAIClient(apiKey, model string, opts ...CallOption) Client {
+	client, _ := NewClient(opts...)
+	client.SetProvider("xai", &XAIProvider{Key: apiKey})
+	return client
+}
+
 // prepareXAIRequest builds the xAI request with the given configuration
 func prepareXAIRequest(messages []Message, streaming bool, cfg CallConfig) (XAIRequest, error) {
 	// Validate messages

@@ -13,6 +13,13 @@ type VoyageProvider struct {
 	Key string
 }
 
+// NewVoyageClient creates a new Voyage AI client
+func NewVoyageClient(apiKey, model string, opts ...CallOption) Client {
+	client, _ := NewClient(opts...)
+	client.SetProvider("voyage", &VoyageProvider{Key: apiKey})
+	return client
+}
+
 // Voyage AI structures
 type VoyageEmbeddingRequest struct {
 	Input string `json:"input"`

@@ -20,7 +20,7 @@ go get github.com/mkozhukh/echo
 
 ### Universal Client
 
-The `NewClient` function provides a unified way to create clients for any provider:
+The `NewCommonClient` function creates a client that auto-configures providers from API keys:
 
 ```go
 package main
@@ -34,19 +34,57 @@ import (
 func main() {
     ctx := context.Background()
 
-    // Create client with provider/model format
-    client, err := echo.NewClient("openai/gpt-5", "your-api-key")
+    // Create client with explicit API keys
+    client, err := echo.NewCommonClient(map[string]string{
+        "openai": "your-openai-key",
+    }, echo.WithModel("openai/gpt-5"))
     if err != nil {
         panic(err)
     }
-    
+
     // Simple call using QuickMessage helper
-    resp, err := client.Call(ctx, echo.QuickMessage("Hello, how are you?"))
+    resp, err := client.Complete(ctx, echo.QuickMessage("Hello, how are you?"))
     if err != nil {
         panic(err)
     }
     fmt.Println(resp.Text)
 }
+```
+
+Pass `nil` as keys to auto-detect API keys from environment variables:
+
+```go
+client, err := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-5"))
+```
+
+### Provider-Specific Clients
+
+If you only need a single provider, use the dedicated constructors:
+
+```go
+// OpenAI
+client := echo.NewOpenAIClient("your-api-key", "gpt-5")
+
+// Anthropic
+client := echo.NewAnthropicClient("your-api-key", "claude-sonnet-4-5")
+
+// Google
+client := echo.NewGoogleClient("your-api-key", "gemini-2.5-pro")
+
+// xAI (Grok)
+client := echo.NewXAIClient("your-api-key", "grok-4-0709")
+
+// Voyage AI (embeddings & reranking)
+client := echo.NewVoyageClient("your-api-key", "voyage-4-large")
+```
+
+These accept the same `CallOption` options as `NewCommonClient`:
+
+```go
+client := echo.NewOpenAIClient("your-api-key", "gpt-5",
+    echo.WithSystemMessage("You are a helpful assistant."),
+    echo.WithTemperature(0.7),
+)
 ```
 
 ### Model Aliases
@@ -59,10 +97,10 @@ Use convenient aliases instead of full model names:
 // - balanced: Good balance of quality and speed
 // - light: Fast and economical
 
-client, _ := echo.NewClient("openai/best", "")      // Uses gpt-5.2
-client, _ := echo.NewClient("anthropic/balanced", "") // Uses claude-opus-4-5
-client, _ := echo.NewClient("google/light", "")      // Uses gemini-2.5-flash
-client, _ := echo.NewClient("xai/best", "")          // Uses grok-4-0709
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/best"))      // Uses gpt-5.2
+client, _ := echo.NewCommonClient(nil, echo.WithModel("anthropic/balanced")) // Uses claude-opus-4-5
+client, _ := echo.NewCommonClient(nil, echo.WithModel("google/light"))      // Uses gemini-2.5-flash
+client, _ := echo.NewCommonClient(nil, echo.WithModel("xai/best"))          // Uses grok-4-0709
 ```
 
 ### Environment Variables
@@ -75,7 +113,7 @@ os.Setenv("ECHO_MODEL", "anthropic/balanced")
 os.Setenv("ECHO_KEY", "your-api-key")
 
 // Create client without parameters - uses env vars
-client, _ := echo.NewClient("", "")
+client, _ := echo.NewCommonClient(nil)
 
 // Or use provider-specific API keys
 os.Setenv("OPENAI_API_KEY", "your-openai-key")
@@ -84,7 +122,7 @@ os.Setenv("GOOGLE_API_KEY", "your-google-key")
 os.Setenv("XAI_API_KEY", "your-xai-key")
 
 // API key is automatically selected based on provider
-client, _ := echo.NewClient("openai/gpt-5", "")
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-5"))
 ```
 
 ## Message Chains
@@ -96,7 +134,7 @@ The library supports three ways to create message chains for conversations:
 For basic single-message prompts:
 
 ```go
-resp, _ := client.Call(ctx, echo.QuickMessage("Tell me a joke"))
+resp, _ := client.Complete(ctx, echo.QuickMessage("Tell me a joke"))
 ```
 
 ### 2. TemplateMessage - Multi-Message Templates
@@ -118,7 +156,7 @@ What is 2+2?
 Can you explain why?
 `)
 
-resp, err := client.Call(ctx, messages)
+resp, err := client.Complete(ctx, messages)
 ```
 
 Template format:
@@ -140,7 +178,7 @@ messages := []echo.Message{
     {Role: echo.User, Content: "What's the weather like?"},
 }
 
-resp, err := client.Call(ctx, messages)
+resp, err := client.Complete(ctx, messages)
 ```
 
 ### Message Roles
@@ -155,16 +193,17 @@ resp, err := client.Call(ctx, messages)
 
 ```go
 // Set defaults at client creation time
-client, _ := echo.NewClient("google/best", "your-api-key",
+client, _ := echo.NewCommonClient(nil,
+    echo.WithModel("google/best"),
     echo.WithSystemMessage("You are a creative assistant."),
     echo.WithTemperature(0.8),
 )
 
 // Use client defaults
-resp, _ := client.Call(ctx, echo.QuickMessage("Tell me a joke"))
+resp, _ := client.Complete(ctx, echo.QuickMessage("Tell me a joke"))
 
 // Override defaults for specific calls
-resp, _ = client.Call(ctx, echo.QuickMessage("Write a formal email"),
+resp, _ = client.Complete(ctx, echo.QuickMessage("Write a formal email"),
     echo.WithTemperature(0.2), // More deterministic
 )
 ```
@@ -175,18 +214,18 @@ The library supports switching providers on a per-call basis using `WithModel`:
 
 ```go
 // Create a client with a default provider
-client, _ := echo.NewClient("openai/gpt-4", "")
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-4"))
 
 // Use different providers for different calls
-resp1, _ := client.Call(ctx, echo.QuickMessage("Analyze this text"),
+resp1, _ := client.Complete(ctx, echo.QuickMessage("Analyze this text"),
     echo.WithModel("anthropic/claude-3.5-sonnet"), // Use Anthropic for analysis
 )
 
-resp2, _ := client.Call(ctx, echo.QuickMessage("Generate an image description"),
+resp2, _ := client.Complete(ctx, echo.QuickMessage("Generate an image description"),
     echo.WithModel("google/gemini-2.5-pro"), // Use Google for creative tasks
 )
 
-resp3, _ := client.Call(ctx, echo.QuickMessage("Quick calculation"),
+resp3, _ := client.Complete(ctx, echo.QuickMessage("Quick calculation"),
     echo.WithModel("openai/gpt-5-mini"), // Use a lighter model for simple tasks
 )
 ```
@@ -194,7 +233,7 @@ resp3, _ := client.Call(ctx, echo.QuickMessage("Quick calculation"),
 ### Per-Call Options
 
 ```go
-resp, err := client.Call(ctx, echo.QuickMessage("Write a story"),
+resp, err := client.Complete(ctx, echo.QuickMessage("Write a story"),
     echo.WithTemperature(0.7),
     echo.WithMaxTokens(100),
     echo.WithSystemMessage("You are a creative writer."),
@@ -213,21 +252,21 @@ resp, err := client.Call(ctx, echo.QuickMessage("Write a story"),
 
 ## Streaming Responses
 
-For real-time streaming of responses, use the `StreamCall` method:
+For real-time streaming of responses, use the `StreamComplete` method:
 
 ### Basic Streaming
 
 ```go
-streamResp, err := client.StreamCall(ctx, echo.QuickMessage("Write a short story"))
+streamResp, err := client.StreamComplete(ctx, echo.QuickMessage("Write a short story"))
 if err != nil {
     panic(err)
 }
 ```
 
-### StreamCall vs Call
+### StreamComplete vs Complete
 
-- **`Call`**: Returns complete response after generation finishes
-- **`StreamCall`**: Returns chunks as they're generated for real-time display
+- **`Complete`**: Returns complete response after generation finishes
+- **`StreamComplete`**: Returns chunks as they're generated for real-time display
 
 Both methods support the same options
 
@@ -235,9 +274,9 @@ Both methods support the same options
 
 The "mock" provider can be used for tests, it will return combined string of all incoming messages
 
-```
-client, _ := echo.NewClient("mock/any", "")
-mockResp, err := client.Call(ctx, echo.QuickMessage("test"))
+```go
+client, _ := echo.NewCommonClient(nil, echo.WithModel("mock/any"))
+mockResp, err := client.Complete(ctx, echo.QuickMessage("test"))
 if err != nil {
     panic(err)
 }
@@ -250,17 +289,19 @@ OpenRouter provides access to multiple LLM providers through a single API:
 
 ```go
 // Basic usage with any OpenRouter model
-client, _ := echo.NewClient("openrouter/claude-3.5-sonnet", "your-openrouter-key")
+client, _ := echo.NewCommonClient(map[string]string{
+    "openrouter": "your-openrouter-key",
+}, echo.WithModel("openrouter/claude-3.5-sonnet"))
 ```
 
 you can specify which underlying provider infrastructure to use:
 
 ```go
 // Specify provider routing with @ syntax in model name
-client, _ := echo.NewClient("openrouter/claude-3.5-sonnet@aws", "your-openrouter-key")
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/claude-3.5-sonnet@aws"))
 
 // Multiple providers for fallback (comma-separated)
-client, _ := echo.NewClient("openrouter/gpt-4@azure,openai", "your-openrouter-key")
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/gpt-4@azure,openai"))
 ```
 
 ### Using xAI (Grok)
@@ -269,11 +310,13 @@ xAI provides access to Grok models:
 
 ```go
 // Basic usage
-client, _ := echo.NewClient("xai/grok-4-0709", "your-xai-key")
+client, _ := echo.NewCommonClient(map[string]string{
+    "xai": "your-xai-key",
+}, echo.WithModel("xai/grok-4-0709"))
 
 // Server-side storage is disabled by default for privacy
 // To explicitly enable storage:
-resp, _ := client.Call(ctx, echo.QuickMessage("Hello"),
+resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"),
     echo.WithStoreData(true),
 )
 ```
