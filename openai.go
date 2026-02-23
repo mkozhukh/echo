@@ -76,6 +76,12 @@ type OpenAIProvider struct {
 
 // NewOpenAIClient creates a new OpenAI client (deprecated, kept for compatibility)
 func NewOpenAIClient(apiKey, model string, opts ...CallOption) Client {
+	if model != "" {
+		if !strings.HasPrefix(model, "openai/") {
+			model = "openai/" + model
+		}
+		opts = append([]CallOption{WithModel(model)}, opts...)
+	}
 	client, _ := NewClient(opts...)
 	client.SetProvider("openai", &OpenAIProvider{Key: apiKey})
 	return client
@@ -331,8 +337,8 @@ func (p *OpenAIProvider) streamCall(ctx context.Context, messages []Message, cfg
 
 // OpenAI Embedding structures
 type OpenAIEmbeddingRequest struct {
-	Model string `json:"model"`
-	Input string `json:"input"`
+	Model string   `json:"model"`
+	Input []string `json:"input"`
 }
 
 type OpenAIEmbeddingResponse struct {
@@ -348,7 +354,7 @@ type OpenAIEmbeddingResponse struct {
 }
 
 // getEmbeddings implements the provider interface for OpenAI embeddings
-func (p *OpenAIProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *OpenAIProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
 	// Use provided model or default to text-embedding-3-small
 	model := cfg.Model
 	if model == "" {
@@ -357,7 +363,7 @@ func (p *OpenAIProvider) getEmbeddings(ctx context.Context, text string, cfg Cal
 
 	body := OpenAIEmbeddingRequest{
 		Model: model,
-		Input: text,
+		Input: texts,
 	}
 
 	// Set default base URL if not provided
@@ -379,13 +385,18 @@ func (p *OpenAIProvider) getEmbeddings(ctx context.Context, text string, cfg Cal
 		return nil, fmt.Errorf("OpenAI embedding API error: %s", resp.Error.Message)
 	}
 
-	// Extract embedding from response
+	// Extract embeddings from response
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("no embedding data in response")
 	}
 
+	embeddings := make([][]float32, len(resp.Data))
+	for _, data := range resp.Data {
+		embeddings[data.Index] = data.Embedding
+	}
+
 	response := &EmbeddingResponse{
-		Embedding: resp.Data[0].Embedding,
+		Embeddings: embeddings,
 	}
 
 	// Add metadata if usage information is available

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // VoyageProvider is a stateless provider for Voyage AI embeddings
@@ -15,6 +16,12 @@ type VoyageProvider struct {
 
 // NewVoyageClient creates a new Voyage AI client
 func NewVoyageClient(apiKey, model string, opts ...CallOption) Client {
+	if model != "" {
+		if !strings.HasPrefix(model, "voyage/") {
+			model = "voyage/" + model
+		}
+		opts = append([]CallOption{WithModel(model)}, opts...)
+	}
 	client, _ := NewClient(opts...)
 	client.SetProvider("voyage", &VoyageProvider{Key: apiKey})
 	return client
@@ -22,8 +29,8 @@ func NewVoyageClient(apiKey, model string, opts ...CallOption) Client {
 
 // Voyage AI structures
 type VoyageEmbeddingRequest struct {
-	Input string `json:"input"`
-	Model string `json:"model"`
+	Input []string `json:"input"`
+	Model string   `json:"model"`
 }
 
 type VoyageError struct {
@@ -77,7 +84,7 @@ func (p *VoyageProvider) streamCall(ctx context.Context, messages []Message, cfg
 }
 
 // getEmbeddings implements the provider interface for Voyage AI embeddings
-func (p *VoyageProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *VoyageProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
 	// Use provided model or default to voyage-3
 	model := cfg.Model
 	if model == "" {
@@ -86,7 +93,7 @@ func (p *VoyageProvider) getEmbeddings(ctx context.Context, text string, cfg Cal
 
 	body := VoyageEmbeddingRequest{
 		Model: model,
-		Input: text,
+		Input: texts,
 	}
 
 	// Set default base URL if not provided
@@ -108,13 +115,18 @@ func (p *VoyageProvider) getEmbeddings(ctx context.Context, text string, cfg Cal
 		return nil, fmt.Errorf("Voyage AI embedding API error: %s", resp.Error.Message)
 	}
 
-	// Extract embedding from response
+	// Extract embeddings from response
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("no embedding data in response")
 	}
 
+	embeddings := make([][]float32, len(resp.Data))
+	for _, data := range resp.Data {
+		embeddings[data.Index] = data.Embedding
+	}
+
 	response := &EmbeddingResponse{
-		Embedding: resp.Data[0].Embedding,
+		Embeddings: embeddings,
 	}
 
 	// Add metadata if usage information is available
@@ -277,7 +289,7 @@ func (p *VoyageProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 			PromptTokens int `json:"prompt_tokens"`
 			TotalTokens  int `json:"total_tokens"`
 		}{
-			PromptTokens: 0, // Voyage doesn't provide prompt tokens separately
+			PromptTokens: 0,
 			TotalTokens:  voyageResp.Usage.TotalTokens,
 		}
 	}

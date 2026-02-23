@@ -124,6 +124,12 @@ type AnthropicProvider struct {
 
 // NewAnthropicClient creates a new Anthropic client (deprecated, kept for compatibility)
 func NewAnthropicClient(apiKey, model string, opts ...CallOption) Client {
+	if model != "" {
+		if !strings.HasPrefix(model, "anthropic/") {
+			model = "anthropic/" + model
+		}
+		opts = append([]CallOption{WithModel(model)}, opts...)
+	}
 	client, _ := NewClient(opts...)
 	client.SetProvider("anthropic", &AnthropicProvider{Key: apiKey})
 	return client
@@ -410,7 +416,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 
 // getEmbeddings implements the provider interface for Anthropic
 // Note: Anthropic does not currently support embeddings API
-func (p *AnthropicProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *AnthropicProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
 	return nil, fmt.Errorf("Anthropic does not support embeddings API")
 }
 

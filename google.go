@@ -83,6 +83,12 @@ type GeminiStreamResponse struct {
 
 // NewGoogleClient creates a new Google client (deprecated, kept for compatibility)
 func NewGoogleClient(apiKey, model string, opts ...CallOption) Client {
+	if model != "" {
+		if !strings.HasPrefix(model, "google/") {
+			model = "google/" + model
+		}
+		opts = append([]CallOption{WithModel(model)}, opts...)
+	}
 	client, _ := NewClient(opts...)
 	client.SetProvider("google", &GoogleProvider{Key: apiKey})
 	return client
@@ -305,29 +311,50 @@ type GoogleEmbeddingResponse struct {
 	} `json:"embedding"`
 }
 
+type GoogleBatchEmbeddingRequest struct {
+	Requests []GoogleBatchEmbeddingRequestItem `json:"requests"`
+}
+
+type GoogleBatchEmbeddingRequestItem struct {
+	Model   string        `json:"model"`
+	Content GeminiContent `json:"content"`
+}
+
+type GoogleBatchEmbeddingResponse struct {
+	Error      *GeminiError `json:"error,omitempty"`
+	Embeddings []struct {
+		Values []float32 `json:"values"`
+	} `json:"embeddings"`
+}
+
 // getEmbeddings implements the provider interface for Google embeddings
-func (p *GoogleProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
 	// Use provided model or default to text-embedding-004
 	model := cfg.Model
 	if model == "" {
 		model = "text-embedding-004"
 	}
 
-	body := GoogleEmbeddingRequest{
-		Content: GeminiContent{
-			Parts: []GeminiPart{
-				{Text: text},
+	// Build batch request
+	requests := make([]GoogleBatchEmbeddingRequestItem, len(texts))
+	for i, text := range texts {
+		requests[i] = GoogleBatchEmbeddingRequestItem{
+			Model: "models/" + model,
+			Content: GeminiContent{
+				Parts: []GeminiPart{{Text: text}},
 			},
-		},
+		}
 	}
+
+	body := GoogleBatchEmbeddingRequest{Requests: requests}
 
 	// Build the base URL with model
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
-		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":embedContent"
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":batchEmbedContents"
 	}
 
-	resp := GoogleEmbeddingResponse{}
+	resp := GoogleBatchEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("x-goog-api-key", p.Key)
 	}, body, &resp)
@@ -340,17 +367,19 @@ func (p *GoogleProvider) getEmbeddings(ctx context.Context, text string, cfg Cal
 		return nil, fmt.Errorf("Google embedding API error: %s", resp.Error.Message)
 	}
 
-	// Extract embedding from response
-	if len(resp.Embedding.Values) == 0 {
+	if len(resp.Embeddings) == 0 {
 		return nil, fmt.Errorf("no embedding data in response")
 	}
 
-	response := &EmbeddingResponse{
-		Embedding: resp.Embedding.Values,
-		Metadata:  Metadata{},
+	embeddings := make([][]float32, len(resp.Embeddings))
+	for i, emb := range resp.Embeddings {
+		embeddings[i] = emb.Values
 	}
 
-	return response, nil
+	return &EmbeddingResponse{
+		Embeddings: embeddings,
+		Metadata:   Metadata{},
+	}, nil
 }
 
 // reRank implements the provider interface for Google
@@ -426,22 +455,23 @@ func (p *GoogleProvider) parseCompletionRequest(req *http.Request) (*CompletionR
 }
 
 // parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-// Converts from Google embedding format to OpenAI-compatible format
+// Converts from Google batch embedding format to unified format
 func (p *GoogleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	var googleReq GoogleEmbeddingRequest
+	var googleReq GoogleBatchEmbeddingRequest
 	if err := json.NewDecoder(req.Body).Decode(&googleReq); err != nil {
 		return nil, fmt.Errorf("failed to parse Google embedding request: %w", err)
 	}
 
-	// Combine all parts into a single input string
-	var input string
-	for _, part := range googleReq.Content.Parts {
-		input += part.Text
+	inputs := make([]string, len(googleReq.Requests))
+	for i, r := range googleReq.Requests {
+		for _, part := range r.Content.Parts {
+			inputs[i] += part.Text
+		}
 	}
 
 	embeddingReq := &EmbeddingRequest{
 		Model: "", // Model is typically in the URL for Google, not in the request body
-		Input: input,
+		Input: inputs,
 	}
 
 	return embeddingReq, nil
@@ -564,21 +594,26 @@ func (p *GoogleProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 		model = "text-embedding-004"
 	}
 
-	body := GoogleEmbeddingRequest{
-		Content: GeminiContent{
-			Parts: []GeminiPart{
-				{Text: req.Input},
+	// Build batch request
+	requests := make([]GoogleBatchEmbeddingRequestItem, len(req.Input))
+	for i, text := range req.Input {
+		requests[i] = GoogleBatchEmbeddingRequestItem{
+			Model: "models/" + model,
+			Content: GeminiContent{
+				Parts: []GeminiPart{{Text: text}},
 			},
-		},
+		}
 	}
+
+	body := GoogleBatchEmbeddingRequest{Requests: requests}
 
 	// Build the base URL with model
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
-		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":embedContent"
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":batchEmbedContents"
 	}
 
-	var googleResp GoogleEmbeddingResponse
+	var googleResp GoogleBatchEmbeddingResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
 		httpReq.Header.Set("x-goog-api-key", p.Key)
 	}, body, &googleResp)
@@ -598,13 +633,15 @@ func (p *GoogleProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 			Object    string    `json:"object,omitempty"`
 			Embedding []float32 `json:"embedding"`
 			Index     int       `json:"index"`
-		}, 1),
+		}, len(googleResp.Embeddings)),
 		Model: model,
 	}
 
-	unifiedResp.Data[0].Object = "embedding"
-	unifiedResp.Data[0].Embedding = googleResp.Embedding.Values
-	unifiedResp.Data[0].Index = 0
+	for i, emb := range googleResp.Embeddings {
+		unifiedResp.Data[i].Object = "embedding"
+		unifiedResp.Data[i].Embedding = emb.Values
+		unifiedResp.Data[i].Index = i
+	}
 
 	return unifiedResp, nil
 }

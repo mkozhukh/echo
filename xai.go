@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // XAIRequest represents a request to the xAI chat completions API
@@ -67,6 +68,12 @@ type XAIProvider struct {
 
 // NewXAIClient creates a new xAI client
 func NewXAIClient(apiKey, model string, opts ...CallOption) Client {
+	if model != "" {
+		if !strings.HasPrefix(model, "xai/") {
+			model = "xai/" + model
+		}
+		opts = append([]CallOption{WithModel(model)}, opts...)
+	}
 	client, _ := NewClient(opts...)
 	client.SetProvider("xai", &XAIProvider{Key: apiKey})
 	return client
@@ -307,7 +314,7 @@ func (p *XAIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 
 // getEmbeddings implements the provider interface for xAI
 // Note: xAI embedding API support TBD
-func (p *XAIProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *XAIProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
 	return nil, fmt.Errorf("xAI does not currently support embeddings API")
 }
 
