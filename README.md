@@ -321,6 +321,16 @@ resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"),
 )
 ```
 
+## E2E Testing
+
+Run the e2e smoke test against live provider APIs. Requires API keys set as environment variables — providers without keys are skipped automatically.
+
+```bash
+go run ./cmd/e2e/              # all providers
+go run ./cmd/e2e/ openai       # specific provider
+go run ./cmd/e2e/ openai voyage # multiple providers
+```
+
 ## License
 
 MIT

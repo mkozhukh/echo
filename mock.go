@@ -115,7 +115,7 @@ func (p *MockProvider) streamCall(ctx context.Context, messages []Message, cfg C
 }
 
 // getEmbeddings implements the provider interface for mock embeddings
-func (p *MockProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *MockProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

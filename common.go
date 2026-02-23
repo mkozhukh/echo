@@ -12,7 +12,7 @@ import (
 type Provider interface {
 	call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error)
 	streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error)
-	getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error)
+	getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error)
 	reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
 
 	// Parse HTTP requests into unified request structures
@@ -172,12 +172,12 @@ func (c *CommonClient) StreamComplete(ctx context.Context, messages []Message, o
 }
 
 // GetEmbeddings implements the Client interface
-func (c *CommonClient) GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error) {
+func (c *CommonClient) GetEmbeddings(ctx context.Context, texts []string, opts ...CallOption) (*EmbeddingResponse, error) {
 	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.getEmbeddings(ctx, text, cfg)
+	return p.getEmbeddings(ctx, texts, cfg)
 }
 
 // ReRank implements the Client interface

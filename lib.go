@@ -13,8 +13,8 @@ type Client interface {
 	Complete(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error)
 	// StreamComplete sends a message chain and returns the response as a stream
 	StreamComplete(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error)
-	// GetEmbeddings calculates embeddings for the given text
-	GetEmbeddings(ctx context.Context, text string, opts ...CallOption) (*EmbeddingResponse, error)
+	// GetEmbeddings calculates embeddings for the given texts
+	GetEmbeddings(ctx context.Context, texts []string, opts ...CallOption) (*EmbeddingResponse, error)
 	// ReRank reranks documents based on relevance to query
 	ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error)
 }
@@ -63,8 +63,8 @@ type StreamResponse struct {
 
 // EmbeddingResponse represents the embedding response
 type EmbeddingResponse struct {
-	Embedding []float32 `json:"embedding"`
-	Metadata  Metadata  `json:"metadata,omitempty"`
+	Embeddings [][]float32 `json:"embeddings"`
+	Metadata   Metadata    `json:"metadata,omitempty"`
 }
 
 // RerankResponse represents the rerank response
@@ -80,8 +80,8 @@ type CompletionRequest = OpenAIRequest
 // EmbeddingRequest represents a unified embedding request
 // Based on OpenAI's embedding format
 type EmbeddingRequest struct {
-	Model string `json:"model"`
-	Input string `json:"input"`
+	Model string   `json:"model"`
+	Input []string `json:"input"`
 }
 
 // RerankRequest represents a unified reranking request
