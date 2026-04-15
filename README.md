@@ -9,6 +9,7 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 - Google
 - OpenRouter (via OpenAI-compatible API)
 - xAI (Grok)
+- Local CLI tools (Claude Code, Codex, Gemini) - opt-in, see [Local CLI Providers](#local-cli-providers)
 
 ## Installation
 
@@ -329,6 +330,56 @@ Run the e2e smoke test against live provider APIs. Requires API keys set as envi
 go run ./cmd/e2e/              # all providers
 go run ./cmd/e2e/ openai       # specific provider
 go run ./cmd/e2e/ openai voyage # multiple providers
+```
+
+## Local CLI Providers
+
+If you have an agentic CLI installed locally (Claude Code, OpenAI Codex, Gemini
+CLI) and want to reuse its subscription for plain text-in/text-out completions,
+the library can route requests through the local binary instead of hitting a
+remote API. The CLI is launched in non-interactive mode, the assembled prompt
+is piped in, and stdout is returned as the response.
+
+Because this executes local binaries, CLI providers are **not** registered
+automatically. You must opt in with an explicit call:
+
+```go
+client, _ := echo.NewCommonClient(nil)
+echo.EnableLocalCLI(client) // registers claude-cli, codex-cli, gemini-cli
+
+resp, err := client.Complete(ctx, echo.QuickMessage("explain channels"),
+    echo.WithModel("claude-cli/opus"),
+)
+```
+
+Model naming follows the usual `provider/model` convention, where the second
+segment is forwarded to the CLI as the model flag:
+
+- `claude-cli/<model>` - runs `claude -p --output-format text --model <model>`
+- `codex-cli/<model>` - runs `codex exec -m <model> <prompt>`
+- `gemini-cli/<model>` - runs `gemini -p -m <model> <prompt>`
+
+Binary paths can be overridden via environment variables when the tools aren't
+on `PATH` or a specific version is required:
+
+- `ECHO_CLAUDE_CLI_PATH`
+- `ECHO_CODEX_CLI_PATH`
+- `ECHO_GEMINI_CLI_PATH`
+
+Only the `WithModel` and `WithSystemMessage` options have any effect on a CLI
+call - the CLIs do not expose a uniform way to set temperature, max tokens, or
+structured output, so those options are silently ignored. Embeddings and
+reranking are likewise unsupported.
+
+For full control (custom flags, alternative binaries) instantiate
+`CLIProvider` directly and register it with any provider name you like:
+
+```go
+client.SetProvider("claude-cli", &echo.CLIProvider{
+    Binary:    "/opt/claude/claude",
+    ModelFlag: "--model",
+    ExtraArgs: []string{"-p", "--output-format", "text"},
+})
 ```
 
 ## License
