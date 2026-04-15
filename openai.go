@@ -72,6 +72,26 @@ type OpenAIResponse struct {
 // OpenAIProvider is a stateless provider for OpenAI API
 type OpenAIProvider struct {
 	Key string
+	// Host optionally overrides the origin used when cfg.BaseURL is empty,
+	// so OpenAI-compatible servers (llama.cpp, Ollama, vLLM, LM Studio, etc.)
+	// can be reached without a per-endpoint URL. Leave empty to hit
+	// api.openai.com. Endpoint paths (/v1/chat/completions, /v1/embeddings)
+	// are appended automatically.
+	Host string
+}
+
+// resolveURL picks the request URL for the given endpoint path. An explicit
+// cfg.BaseURL (full URL including path) wins; otherwise p.Host is used as an
+// origin; otherwise we fall back to OpenAI's public endpoint.
+func (p *OpenAIProvider) resolveURL(cfg CallConfig, endpointPath string) string {
+	if cfg.BaseURL != "" {
+		return cfg.BaseURL
+	}
+	host := p.Host
+	if host == "" {
+		host = "https://api.openai.com"
+	}
+	return strings.TrimRight(host, "/") + endpointPath
 }
 
 // NewOpenAIClient creates a new OpenAI client (deprecated, kept for compatibility)
@@ -192,11 +212,7 @@ func (p *OpenAIProvider) call(ctx context.Context, messages []Message, cfg CallC
 		return nil, err
 	}
 
-	// Set default base URL if not provided
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1/chat/completions"
-	}
+	baseURL := p.resolveURL(cfg, "/v1/chat/completions")
 
 	resp := OpenAIResponse{}
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
@@ -253,11 +269,7 @@ func (p *OpenAIProvider) streamCall(ctx context.Context, messages []Message, cfg
 		return nil, err
 	}
 
-	// Set default base URL if not provided
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1/chat/completions"
-	}
+	baseURL := p.resolveURL(cfg, "/v1/chat/completions")
 
 	// Get streaming response
 	respBody, err := streamHTTPAPI(ctx, baseURL, func(req *http.Request) {
@@ -366,11 +378,7 @@ func (p *OpenAIProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		Input: texts,
 	}
 
-	// Set default base URL if not provided
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1/embeddings"
-	}
+	baseURL := p.resolveURL(cfg, "/v1/embeddings")
 
 	resp := OpenAIEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
@@ -454,11 +462,7 @@ func (p *OpenAIProvider) buildCompletionRequest(ctx context.Context, req *Comple
 		StreamOptions: req.StreamOptions,
 	}
 
-	// Set default base URL if not provided
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1/chat/completions"
-	}
+	baseURL := p.resolveURL(cfg, "/v1/chat/completions")
 
 	// Make the API call
 	var openaiResp OpenAIResponse
@@ -527,11 +531,7 @@ func (p *OpenAIProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 		Input: req.Input,
 	}
 
-	// Set default base URL if not provided
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1/embeddings"
-	}
+	baseURL := p.resolveURL(cfg, "/v1/embeddings")
 
 	var openaiResp OpenAIEmbeddingResponse
 	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {

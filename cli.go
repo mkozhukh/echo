@@ -41,6 +41,10 @@ type CLIProvider struct {
 	// is appended as the final positional argument; otherwise it is piped to
 	// the child process via stdin.
 	PromptAsArg bool
+	// WorkDir sets the working directory for the child process. When empty,
+	// a fresh temporary directory is created per call and removed after the
+	// process exits, which limits the files an agentic CLI can see.
+	WorkDir string
 }
 
 // resolveBinary returns the effective binary path, honoring the EnvVar
@@ -83,15 +87,17 @@ func (p *CLIProvider) buildPrompt(messages []Message, cfg CallConfig) string {
 	return sb.String()
 }
 
-// buildCmd constructs the exec.Cmd for the given prompt and config.
-func (p *CLIProvider) buildCmd(ctx context.Context, prompt string, cfg CallConfig) (*exec.Cmd, string, error) {
+// buildCmd constructs the exec.Cmd for the given prompt and config. The
+// returned cleanup function must be invoked after the command completes; it
+// removes the scratch working directory when one was created for this call.
+func (p *CLIProvider) buildCmd(ctx context.Context, prompt string, cfg CallConfig) (*exec.Cmd, string, func(), error) {
 	bin := p.resolveBinary()
 	if bin == "" {
-		return nil, "", fmt.Errorf("cli binary is not configured")
+		return nil, "", func() {}, fmt.Errorf("cli binary is not configured")
 	}
 
 	args := append([]string{}, p.ExtraArgs...)
-	if p.ModelFlag != "" && cfg.Model != "" {
+	if p.ModelFlag != "" && cfg.Model != "" && cfg.Model != "default" {
 		args = append(args, p.ModelFlag, cfg.Model)
 	}
 	if p.PromptAsArg {
@@ -102,7 +108,19 @@ func (p *CLIProvider) buildCmd(ctx context.Context, prompt string, cfg CallConfi
 	if !p.PromptAsArg {
 		cmd.Stdin = strings.NewReader(prompt)
 	}
-	return cmd, bin, nil
+
+	cleanup := func() {}
+	if p.WorkDir != "" {
+		cmd.Dir = p.WorkDir
+	} else {
+		dir, err := os.MkdirTemp("", "echo-cli-")
+		if err != nil {
+			return nil, "", cleanup, fmt.Errorf("create scratch workdir: %w", err)
+		}
+		cmd.Dir = dir
+		cleanup = func() { os.RemoveAll(dir) }
+	}
+	return cmd, bin, cleanup, nil
 }
 
 // call implements Provider.
@@ -112,10 +130,11 @@ func (p *CLIProvider) call(ctx context.Context, messages []Message, cfg CallConf
 	}
 
 	prompt := p.buildPrompt(messages, cfg)
-	cmd, bin, err := p.buildCmd(ctx, prompt, cfg)
+	cmd, bin, cleanup, err := p.buildCmd(ctx, prompt, cfg)
 	if err != nil {
 		return nil, err
 	}
+	defer cleanup()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -275,6 +294,36 @@ func NewGeminiCLIProvider() *CLIProvider {
 	}
 }
 
+// NewOpenCodeCLIProvider returns a provider wired for the opencode CLI.
+// Override the binary path via the ECHO_OPENCODE_CLI_PATH environment variable.
+func NewOpenCodeCLIProvider() *CLIProvider {
+	return &CLIProvider{
+		Binary:      "opencode",
+		EnvVar:      "ECHO_OPENCODE_CLI_PATH",
+		ModelFlag:   "--model",
+		ExtraArgs:   []string{"run"},
+		PromptAsArg: true,
+	}
+}
+
+// EnableLocalLlama registers an OpenAI-compatible provider targeting a local
+// llama.cpp server under the "llama" name. The default host is
+// http://127.0.0.1:8080; set ECHO_LLAMA_URL to override (origin only, e.g.
+// http://host:9090). Both chat completions and embeddings are served from
+// the same host using the standard /v1/chat/completions and /v1/embeddings
+// paths.
+//
+// Models are referenced as "llama/<any-tag>" - llama.cpp serves whichever
+// model the server was started with, so the tag is cosmetic unless the
+// server was launched with multiple models.
+func EnableLocalLlama(client Client) {
+	host := os.Getenv("ECHO_LLAMA_URL")
+	if host == "" {
+		host = "http://127.0.0.1:8080"
+	}
+	client.SetProvider("llama", &OpenAIProvider{Host: host})
+}
+
 // EnableLocalCLI registers the local CLI providers on the given client.
 // Because these providers execute local binaries, they are intentionally NOT
 // registered by NewCommonClient - callers must opt in explicitly.
@@ -282,14 +331,17 @@ func NewGeminiCLIProvider() *CLIProvider {
 // After this call the following provider names are available and can be
 // referenced through the standard "provider/model" syntax:
 //
-//	claude-cli/<model>   e.g. claude-cli/opus
-//	codex-cli/<model>    e.g. codex-cli/gpt-5
-//	gemini-cli/<model>   e.g. gemini-cli/pro
+//	claude-cli/<model>     e.g. claude-cli/opus
+//	codex-cli/<model>      e.g. codex-cli/gpt-5
+//	gemini-cli/<model>     e.g. gemini-cli/pro
+//	opencode-cli/<model>   e.g. opencode-cli/anthropic/claude-sonnet-4
 //
 // Binary paths can be overridden via the environment variables
-// ECHO_CLAUDE_CLI_PATH, ECHO_CODEX_CLI_PATH, and ECHO_GEMINI_CLI_PATH.
+// ECHO_CLAUDE_CLI_PATH, ECHO_CODEX_CLI_PATH, ECHO_GEMINI_CLI_PATH, and
+// ECHO_OPENCODE_CLI_PATH.
 func EnableLocalCLI(client Client) {
 	client.SetProvider("claude-cli", NewClaudeCLIProvider())
 	client.SetProvider("codex-cli", NewCodexCLIProvider())
 	client.SetProvider("gemini-cli", NewGeminiCLIProvider())
+	client.SetProvider("opencode-cli", NewOpenCodeCLIProvider())
 }

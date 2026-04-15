@@ -25,6 +25,12 @@ func buildClient(g globalOptions, extra ...echo.CallOption) (echo.Client, error)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %w", err)
 	}
+	if g.localCLI {
+		echo.EnableLocalCLI(client)
+	}
+	if g.localLlama {
+		echo.EnableLocalLlama(client)
+	}
 	return client, nil
 }
 
