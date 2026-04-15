@@ -1,0 +1,9 @@
+# https://taskfile.dev
+
+version: '3'
+
+tasks:
+  build:
+    desc: Build the ec CLI tool
+    cmds:
+      - go build -o ec ./cmd/ec

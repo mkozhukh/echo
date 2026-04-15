@@ -46,7 +46,7 @@ func runEmbed(ctx context.Context, opts *embedOptions, args []string) error {
 		return err
 	}
 
-	resp, err := client.GetEmbeddings(ctx, text)
+	resp, err := client.GetEmbeddings(ctx, []string{text})
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,11 @@ func runEmbed(ctx context.Context, opts *embedOptions, args []string) error {
 		return enc.Encode(resp)
 	}
 
-	for i, v := range resp.Embedding {
+	if len(resp.Embeddings) == 0 {
+		fmt.Println()
+		return nil
+	}
+	for i, v := range resp.Embeddings[0] {
 		if i > 0 {
 			fmt.Print(" ")
 		}

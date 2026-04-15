@@ -158,7 +158,7 @@ func (p *CLIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 }
 
 // getEmbeddings is not supported by CLI providers.
-func (p *CLIProvider) getEmbeddings(ctx context.Context, text string, cfg CallConfig) (*EmbeddingResponse, error) {
+func (p *CLIProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
 	return nil, fmt.Errorf("embeddings are not supported by cli providers")
 }
 
