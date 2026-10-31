@@ -47,7 +47,6 @@ func capability[T any](p Provider, providerName, feature string) (T, error) {
 
 // CommonClient is the main client that delegates to appropriate providers
 type CommonClient struct {
-	apiKey      string
 	baseConfig  CallConfig
 	providerMap map[string]Provider
 }
