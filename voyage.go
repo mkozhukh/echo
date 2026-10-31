@@ -126,14 +126,10 @@ func (p *VoyageProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 
 	response := &EmbeddingResponse{
 		Embeddings: embeddings,
+		Metadata:   Metadata{"model": resp.Model},
 	}
-
-	// Add metadata if usage information is available
 	if resp.Usage != nil {
-		response.Metadata = Metadata{
-			"total_tokens": resp.Usage.TotalTokens,
-			"model":        resp.Model,
-		}
+		response.Usage = &Usage{InputTokens: resp.Usage.TotalTokens, TotalTokens: resp.Usage.TotalTokens}
 	}
 
 	return response, nil
@@ -183,11 +179,9 @@ func (p *VoyageProvider) reRank(ctx context.Context, query string, documents []s
 	}
 
 	response := &RerankResponse{
-		Scores: scores,
-		Metadata: Metadata{
-			"total_tokens": resp.Usage.TotalTokens,
-			"model":        resp.Model,
-		},
+		Scores:   scores,
+		Usage:    &Usage{InputTokens: resp.Usage.TotalTokens, TotalTokens: resp.Usage.TotalTokens},
+		Metadata: Metadata{"model": resp.Model},
 	}
 
 	return response, nil

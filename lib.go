@@ -23,15 +23,50 @@ type Client interface {
 
 type Metadata = map[string]any
 
+// Usage reports token consumption of a call, normalized across providers.
+// Prices are not computed by the library; CostUSD is set only when the
+// provider reports the charged amount directly (e.g. OpenRouter).
+type Usage struct {
+	InputTokens       int      `json:"input_tokens"`                  // all input tokens, including cached ones
+	CachedInputTokens int      `json:"cached_input_tokens,omitempty"` // input tokens read from cache (subset of InputTokens)
+	CacheWriteTokens  int      `json:"cache_write_tokens,omitempty"`  // input tokens written to cache (subset of InputTokens)
+	OutputTokens      int      `json:"output_tokens"`                 // all output tokens, including reasoning
+	ReasoningTokens   int      `json:"reasoning_tokens,omitempty"`    // reasoning/thinking tokens (subset of OutputTokens)
+	TotalTokens       int      `json:"total_tokens"`
+	CostUSD           *float64 `json:"cost_usd,omitempty"` // provider-reported cost, if any
+}
+
+// Add accumulates other into u. Safe to call with a nil other.
+func (u *Usage) Add(other *Usage) {
+	if other == nil {
+		return
+	}
+	u.InputTokens += other.InputTokens
+	u.CachedInputTokens += other.CachedInputTokens
+	u.CacheWriteTokens += other.CacheWriteTokens
+	u.OutputTokens += other.OutputTokens
+	u.ReasoningTokens += other.ReasoningTokens
+	u.TotalTokens += other.TotalTokens
+	if other.CostUSD != nil {
+		cost := *other.CostUSD
+		if u.CostUSD != nil {
+			cost += *u.CostUSD
+		}
+		u.CostUSD = &cost
+	}
+}
+
 // Response represents the LLM response
 type Response struct {
 	Text     string   `json:"text"`
+	Usage    *Usage   `json:"usage,omitempty"` // nil when the provider does not report usage
 	Metadata Metadata `json:"metadata,omitempty"`
 }
 
 type StreamChunk struct {
 	Data  string
-	Meta  *Metadata // Set on first chunk if available
+	Usage *Usage    // Set on a dedicated chunk near the end of the stream, if reported
+	Meta  *Metadata // Provider-specific metadata (non-token), if any
 	Error error     // Set on error or completion
 }
 
@@ -42,12 +77,14 @@ type StreamResponse struct {
 // EmbeddingResponse represents the embedding response
 type EmbeddingResponse struct {
 	Embeddings [][]float32 `json:"embeddings"`
+	Usage      *Usage      `json:"usage,omitempty"`
 	Metadata   Metadata    `json:"metadata,omitempty"`
 }
 
 // RerankResponse represents the rerank response
 type RerankResponse struct {
 	Scores   []float32 `json:"scores"`
+	Usage    *Usage    `json:"usage,omitempty"`
 	Metadata Metadata  `json:"metadata,omitempty"`
 }
 

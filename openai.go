@@ -22,6 +22,44 @@ type openAIError struct {
 	Code    int32  `json:"code"`
 }
 
+// openAIUsage is the usage block of OpenAI-compatible APIs (OpenAI, OpenRouter, xAI)
+type openAIUsage struct {
+	PromptTokens        int `json:"prompt_tokens"`
+	CompletionTokens    int `json:"completion_tokens"`
+	TotalTokens         int `json:"total_tokens"`
+	PromptTokensDetails *struct {
+		CachedTokens     int `json:"cached_tokens"`
+		CacheWriteTokens int `json:"cache_write_tokens"` // OpenRouter
+	} `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details,omitempty"`
+	Cost *float64 `json:"cost,omitempty"` // OpenRouter: amount charged
+}
+
+func (u *openAIUsage) toUsage() *Usage {
+	if u == nil {
+		return nil
+	}
+	out := &Usage{
+		InputTokens:  u.PromptTokens,
+		OutputTokens: u.CompletionTokens,
+		TotalTokens:  u.TotalTokens,
+		CostUSD:      u.Cost,
+	}
+	if out.TotalTokens == 0 {
+		out.TotalTokens = out.InputTokens + out.OutputTokens
+	}
+	if d := u.PromptTokensDetails; d != nil {
+		out.CachedInputTokens = d.CachedTokens
+		out.CacheWriteTokens = d.CacheWriteTokens
+	}
+	if d := u.CompletionTokensDetails; d != nil {
+		out.ReasoningTokens = d.ReasoningTokens
+	}
+	return out
+}
+
 type openAIRequest struct {
 	Model         string          `json:"model"`
 	Temperature   *float32        `json:"temperature,omitempty"`
@@ -62,11 +100,7 @@ type openAIResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
+	Usage *openAIUsage `json:"usage,omitempty"`
 }
 
 // OpenAIProvider is a stateless provider for OpenAI API
@@ -232,20 +266,10 @@ func (p *OpenAIProvider) call(ctx context.Context, messages []Message, cfg CallC
 		return nil, fmt.Errorf("no choices in response")
 	}
 
-	response := &Response{
-		Text: resp.Choices[0].Message.Content,
-	}
-
-	// Add metadata if usage information is available
-	if resp.Usage != nil {
-		response.Metadata = Metadata{
-			"total_tokens":      resp.Usage.TotalTokens,
-			"prompt_tokens":     resp.Usage.PromptTokens,
-			"completion_tokens": resp.Usage.CompletionTokens,
-		}
-	}
-
-	return response, nil
+	return &Response{
+		Text:  resp.Choices[0].Message.Content,
+		Usage: resp.Usage.toUsage(),
+	}, nil
 }
 
 // Streaming response structures
@@ -255,11 +279,7 @@ type openAIStreamResponse struct {
 			Content string `json:"content"`
 		} `json:"delta"`
 	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
+	Usage *openAIUsage `json:"usage,omitempty"`
 }
 
 // streamCall implements the provider interface for OpenAI streaming
@@ -324,21 +344,16 @@ func (p *OpenAIProvider) streamCall(ctx context.Context, messages []Message, cfg
 				return
 			}
 
-			// Check if this is a usage chunk (has usage data but no choices)
-			if streamResp.Usage != nil && len(streamResp.Choices) == 0 {
-				// Send metadata chunk
-				meta := Metadata{
-					"total_tokens":      streamResp.Usage.TotalTokens,
-					"prompt_tokens":     streamResp.Usage.PromptTokens,
-					"completion_tokens": streamResp.Usage.CompletionTokens,
-				}
-				ch <- StreamChunk{
-					Meta: &meta,
-				}
-			} else if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.Content != "" {
-				// Normal content chunk
+			if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.Content != "" {
 				ch <- StreamChunk{
 					Data: streamResp.Choices[0].Delta.Content,
+				}
+			}
+
+			// Usage arrives on the final chunk (some servers also include choices there)
+			if streamResp.Usage != nil {
+				ch <- StreamChunk{
+					Usage: streamResp.Usage.toUsage(),
 				}
 			}
 		}
@@ -359,10 +374,7 @@ type openAIEmbeddingResponse struct {
 		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
-	Usage *struct {
-		PromptTokens int `json:"prompt_tokens"`
-		TotalTokens  int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
+	Usage *openAIUsage `json:"usage,omitempty"`
 }
 
 // getEmbeddings implements the provider interface for OpenAI embeddings
@@ -403,17 +415,8 @@ func (p *OpenAIProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		embeddings[data.Index] = data.Embedding
 	}
 
-	response := &EmbeddingResponse{
+	return &EmbeddingResponse{
 		Embeddings: embeddings,
-	}
-
-	// Add metadata if usage information is available
-	if resp.Usage != nil {
-		response.Metadata = Metadata{
-			"prompt_tokens": resp.Usage.PromptTokens,
-			"total_tokens":  resp.Usage.TotalTokens,
-		}
-	}
-
-	return response, nil
+		Usage:      resp.Usage.toUsage(),
+	}, nil
 }

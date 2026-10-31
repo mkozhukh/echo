@@ -40,11 +40,7 @@ type xaiResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
+	Usage *openAIUsage `json:"usage,omitempty"`
 }
 
 // xaiStreamResponse represents a streaming response chunk from xAI
@@ -54,11 +50,7 @@ type xaiStreamResponse struct {
 			Content string `json:"content"`
 		} `json:"delta"`
 	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
+	Usage *openAIUsage `json:"usage,omitempty"`
 }
 
 // XAIProvider is a stateless provider for xAI (Grok) API
@@ -207,20 +199,10 @@ func (p *XAIProvider) call(ctx context.Context, messages []Message, cfg CallConf
 		return nil, fmt.Errorf("no choices in response")
 	}
 
-	response := &Response{
-		Text: resp.Choices[0].Message.Content,
-	}
-
-	// Add metadata if usage information is available
-	if resp.Usage != nil {
-		response.Metadata = Metadata{
-			"total_tokens":      resp.Usage.TotalTokens,
-			"prompt_tokens":     resp.Usage.PromptTokens,
-			"completion_tokens": resp.Usage.CompletionTokens,
-		}
-	}
-
-	return response, nil
+	return &Response{
+		Text:  resp.Choices[0].Message.Content,
+		Usage: resp.Usage.toUsage(),
+	}, nil
 }
 
 // streamCall implements the provider interface for xAI streaming
@@ -289,21 +271,16 @@ func (p *XAIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 				return
 			}
 
-			// Check if this is a usage chunk (has usage data but no choices)
-			if streamResp.Usage != nil && len(streamResp.Choices) == 0 {
-				// Send metadata chunk
-				meta := Metadata{
-					"total_tokens":      streamResp.Usage.TotalTokens,
-					"prompt_tokens":     streamResp.Usage.PromptTokens,
-					"completion_tokens": streamResp.Usage.CompletionTokens,
-				}
-				ch <- StreamChunk{
-					Meta: &meta,
-				}
-			} else if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.Content != "" {
-				// Normal content chunk
+			if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.Content != "" {
 				ch <- StreamChunk{
 					Data: streamResp.Choices[0].Delta.Content,
+				}
+			}
+
+			// Usage arrives on the final chunk (some servers also include choices there)
+			if streamResp.Usage != nil {
+				ch <- StreamChunk{
+					Usage: streamResp.Usage.toUsage(),
 				}
 			}
 		}

@@ -71,9 +71,11 @@ func (p *TypeSafeProvider) decide(ctx context.Context, req decisionRequest, cfg 
 		Metadata: Metadata{"model": resp.Model},
 	}
 	if resp.Usage != nil {
-		out.Metadata["input_tokens"] = resp.Usage.InputTokens
-		out.Metadata["output_tokens"] = resp.Usage.OutputTokens
-		out.Metadata["total_tokens"] = resp.Usage.InputTokens + resp.Usage.OutputTokens
+		out.Usage = &Usage{
+			InputTokens:  resp.Usage.InputTokens,
+			OutputTokens: resp.Usage.OutputTokens,
+			TotalTokens:  resp.Usage.InputTokens + resp.Usage.OutputTokens,
+		}
 	}
 	return out, nil
 }

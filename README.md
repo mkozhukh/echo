@@ -256,6 +256,41 @@ resp, err := client.Complete(ctx, echo.QuickMessage("Write a story"),
 - `WithEndPoint(string)` - Specify endpoint routing (primarily for OpenRouter provider selection)
 - `WithStoreData(bool)` - Control server-side storage (xAI only, defaults to false for privacy)
 
+## Token Usage
+
+Every response carries a normalized `Usage` struct (`resp.Usage`), or `nil` when the provider
+does not report usage (Google embeddings, local CLI providers):
+
+```go
+resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"))
+if u := resp.Usage; u != nil {
+    fmt.Println(u.InputTokens, u.OutputTokens, u.TotalTokens)
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `InputTokens` | All input tokens, including cached ones |
+| `CachedInputTokens` | Input tokens read from cache (subset of `InputTokens`) |
+| `CacheWriteTokens` | Input tokens written to cache, e.g. Anthropic cache creation (subset of `InputTokens`) |
+| `OutputTokens` | All output tokens, including reasoning/thinking |
+| `ReasoningTokens` | Reasoning/thinking tokens (subset of `OutputTokens`) |
+| `TotalTokens` | Total tokens |
+| `CostUSD` | Charged amount, only when the provider reports it (OpenRouter); otherwise `nil` |
+
+The library does not compute prices. Multiply the token counts by your own price table, and use
+`Usage.Add` to accumulate totals across calls. The same struct is available on
+`EmbeddingResponse`, `RerankResponse` and `DecisionResponse`. When streaming, usage arrives on a
+dedicated chunk near the end of the stream:
+
+```go
+for chunk := range stream.Stream {
+    if chunk.Usage != nil {
+        total.Add(chunk.Usage)
+    }
+}
+```
+
 ## Streaming Responses
 
 For real-time streaming of responses, use the `StreamComplete` method:
@@ -362,7 +397,7 @@ fmt.Println(resp.Answers["anger"].Probabilities)
 
 The state can be a string or any JSON-serializable value. Options are sent in the declared order.
 Use `WithCriteria` to clarify a `Noul` question, or build a `Question` literal for object/array instructions.
-Usage stats are in `resp.Metadata` (`input_tokens`, `output_tokens`, `total_tokens`).
+Token usage is in `resp.Usage` (see [Token Usage](#token-usage)).
 
 Other providers return a "does not support decisions" error for `Decide`; the `mock` provider returns deterministic
 answers (first option, lowest level, 0.5) for tests. TypeSafe supports only `Decide`.

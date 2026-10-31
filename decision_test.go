@@ -132,8 +132,11 @@ func TestTypeSafeDecide(t *testing.T) {
 	if resp.Answers["escalate"].Confidence != nil {
 		t.Errorf("noul confidence should be nil")
 	}
-	if resp.Model != "jev-1.13.0" || resp.Metadata["input_tokens"] != 428 || resp.Metadata["output_tokens"] != 73 {
-		t.Errorf("model/metadata = %v %v", resp.Model, resp.Metadata)
+	if resp.Model != "jev-1.13.0" {
+		t.Errorf("model = %v", resp.Model)
+	}
+	if u := resp.Usage; u == nil || u.InputTokens != 428 || u.OutputTokens != 73 || u.TotalTokens != 501 {
+		t.Errorf("usage = %+v", resp.Usage)
 	}
 }
 

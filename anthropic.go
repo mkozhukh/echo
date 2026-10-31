@@ -46,11 +46,46 @@ type anthropicResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	StopReason string `json:"stop_reason"`
-	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	StopReason string         `json:"stop_reason"`
+	Usage      anthropicUsage `json:"usage"`
+}
+
+// anthropicUsage is the usage block of Anthropic responses.
+// input_tokens excludes cached tokens, which are reported separately.
+type anthropicUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+}
+
+func (u anthropicUsage) toUsage() *Usage {
+	input := u.InputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+	return &Usage{
+		InputTokens:       input,
+		CachedInputTokens: u.CacheReadInputTokens,
+		CacheWriteTokens:  u.CacheCreationInputTokens,
+		OutputTokens:      u.OutputTokens,
+		TotalTokens:       input + u.OutputTokens,
+	}
+}
+
+// merge applies a message_delta usage update: output tokens are cumulative,
+// other fields are updated only when present.
+func (u *anthropicUsage) merge(d *anthropicUsage) {
+	if d == nil {
+		return
+	}
+	u.OutputTokens = d.OutputTokens
+	if d.InputTokens > 0 {
+		u.InputTokens = d.InputTokens
+	}
+	if d.CacheCreationInputTokens > 0 {
+		u.CacheCreationInputTokens = d.CacheCreationInputTokens
+	}
+	if d.CacheReadInputTokens > 0 {
+		u.CacheReadInputTokens = d.CacheReadInputTokens
+	}
 }
 
 // Anthropic streaming response structures
@@ -61,17 +96,14 @@ type anthropicStreamEvent struct {
 type anthropicMessageStart struct {
 	Type    string `json:"type"`
 	Message struct {
-		ID           string  `json:"id"`
-		Type         string  `json:"type"`
-		Role         string  `json:"role"`
-		Content      []any   `json:"content"`
-		Model        string  `json:"model"`
-		StopReason   *string `json:"stop_reason"`
-		StopSequence *string `json:"stop_sequence"`
-		Usage        struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
+		ID           string         `json:"id"`
+		Type         string         `json:"type"`
+		Role         string         `json:"role"`
+		Content      []any          `json:"content"`
+		Model        string         `json:"model"`
+		StopReason   *string        `json:"stop_reason"`
+		StopSequence *string        `json:"stop_sequence"`
+		Usage        anthropicUsage `json:"usage"`
 	} `json:"message"`
 }
 
@@ -90,9 +122,7 @@ type anthropicMessageDelta struct {
 		StopReason   *string `json:"stop_reason"`
 		StopSequence *string `json:"stop_sequence"`
 	} `json:"delta"`
-	Usage *struct {
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage,omitempty"`
+	Usage *anthropicUsage `json:"usage,omitempty"`
 }
 
 // AnthropicProvider is a stateless provider for Anthropic API
@@ -232,11 +262,10 @@ func (p *AnthropicProvider) call(ctx context.Context, messages []Message, cfg Ca
 	}
 
 	return &Response{
-		Text: text,
-		Metadata: map[string]any{
-			"stop_reason":   resp.StopReason,
-			"input_tokens":  resp.Usage.InputTokens,
-			"output_tokens": resp.Usage.OutputTokens,
+		Text:  text,
+		Usage: resp.Usage.toUsage(),
+		Metadata: Metadata{
+			"stop_reason": resp.StopReason,
 		},
 	}, nil
 }
@@ -281,10 +310,10 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 	go func() {
 		defer close(ch)
 
-		var totalInputTokens, totalOutputTokens int
+		var usage anthropicUsage
 
 		err := parseSSEStream(respBody, func(msg sseMessage) error {
-			return processAnthropicSSEMessage(msg, ch, &totalInputTokens, &totalOutputTokens)
+			return processAnthropicSSEMessage(msg, ch, &usage)
 		})
 
 		if err != nil {
@@ -296,7 +325,7 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 }
 
 // processAnthropicSSEMessage processes individual Anthropic SSE messages
-func processAnthropicSSEMessage(msg sseMessage, ch chan StreamChunk, totalInputTokens, totalOutputTokens *int) error {
+func processAnthropicSSEMessage(msg sseMessage, ch chan StreamChunk, usage *anthropicUsage) error {
 	if len(msg.Data) == 0 {
 		return nil
 	}
@@ -309,8 +338,7 @@ func processAnthropicSSEMessage(msg sseMessage, ch chan StreamChunk, totalInputT
 			return fmt.Errorf("json parse error for message_start: %w", err)
 		}
 		// Store initial token counts
-		*totalInputTokens = messageStart.Message.Usage.InputTokens
-		*totalOutputTokens = messageStart.Message.Usage.OutputTokens
+		*usage = messageStart.Message.Usage
 
 	case "content_block_start":
 		// Content block started, no action needed
@@ -335,19 +363,13 @@ func processAnthropicSSEMessage(msg sseMessage, ch chan StreamChunk, totalInputT
 		if err := json.Unmarshal(msg.Data, &messageDelta); err != nil {
 			return fmt.Errorf("json parse error for message_delta: %w", err)
 		}
-		// Update output token count if provided
-		if messageDelta.Usage != nil {
-			*totalOutputTokens = messageDelta.Usage.OutputTokens
-		}
+		// Update token counts if provided
+		usage.merge(messageDelta.Usage)
 
 	case "message_stop":
-		// Send final metadata
-		meta := Metadata{
-			"input_tokens":  *totalInputTokens,
-			"output_tokens": *totalOutputTokens,
-		}
+		// Send final usage
 		ch <- StreamChunk{
-			Meta: &meta,
+			Usage: usage.toUsage(),
 		}
 
 	case "ping":
@@ -374,17 +396,11 @@ func processAnthropicSSEMessage(msg sseMessage, ch chan StreamChunk, totalInputT
 		case "message_delta":
 			var messageDelta anthropicMessageDelta
 			if err := json.Unmarshal(msg.Data, &messageDelta); err == nil {
-				if messageDelta.Usage != nil {
-					*totalOutputTokens = messageDelta.Usage.OutputTokens
-				}
+				usage.merge(messageDelta.Usage)
 			}
 		case "message_stop":
-			meta := Metadata{
-				"input_tokens":  *totalInputTokens,
-				"output_tokens": *totalOutputTokens,
-			}
 			ch <- StreamChunk{
-				Meta: &meta,
+				Usage: usage.toUsage(),
 			}
 		}
 	}

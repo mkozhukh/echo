@@ -101,6 +101,7 @@ type Answer struct {
 type DecisionResponse struct {
 	Model    string            `json:"model"`
 	Answers  map[string]Answer `json:"answers"`
+	Usage    *Usage            `json:"usage,omitempty"`
 	Metadata Metadata          `json:"metadata,omitempty"`
 }
 

@@ -49,6 +49,34 @@ type geminiError struct {
 	Status  string `json:"status"`
 }
 
+// geminiUsage is the usageMetadata block of Gemini responses.
+// promptTokenCount includes cached tokens; thinking tokens are reported
+// separately from candidatesTokenCount but billed as output.
+type geminiUsage struct {
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount"`
+	TotalTokenCount         int `json:"totalTokenCount"`
+}
+
+func (u *geminiUsage) toUsage() *Usage {
+	if u == nil {
+		return nil
+	}
+	out := &Usage{
+		InputTokens:       u.PromptTokenCount,
+		CachedInputTokens: u.CachedContentTokenCount,
+		OutputTokens:      u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		ReasoningTokens:   u.ThoughtsTokenCount,
+		TotalTokens:       u.TotalTokenCount,
+	}
+	if out.TotalTokens == 0 {
+		out.TotalTokens = out.InputTokens + out.OutputTokens
+	}
+	return out
+}
+
 type geminiResponse struct {
 	Error      *geminiError `json:"error,omitempty"`
 	Candidates []struct {
@@ -58,11 +86,7 @@ type geminiResponse struct {
 			} `json:"parts"`
 		} `json:"content"`
 	} `json:"candidates"`
-	UsageMetadata *struct {
-		PromptTokenCount     int `json:"promptTokenCount"`
-		CandidatesTokenCount int `json:"candidatesTokenCount"`
-		TotalTokenCount      int `json:"totalTokenCount"`
-	} `json:"usageMetadata,omitempty"`
+	UsageMetadata *geminiUsage `json:"usageMetadata,omitempty"`
 }
 
 // geminiStreamResponse represents a streaming response chunk from Gemini
@@ -74,11 +98,7 @@ type geminiStreamResponse struct {
 			} `json:"parts"`
 		} `json:"content"`
 	} `json:"candidates"`
-	UsageMetadata *struct {
-		PromptTokenCount     int `json:"promptTokenCount"`
-		CandidatesTokenCount int `json:"candidatesTokenCount"`
-		TotalTokenCount      int `json:"totalTokenCount"`
-	} `json:"usageMetadata,omitempty"`
+	UsageMetadata *geminiUsage `json:"usageMetadata,omitempty"`
 }
 
 // NewGoogleClient creates a new Google client (deprecated, kept for compatibility)
@@ -205,18 +225,10 @@ func (p *GoogleProvider) call(ctx context.Context, messages []Message, cfg CallC
 		return nil, fmt.Errorf("no content parts in Gemini response")
 	}
 
-	result := &Response{Text: response.Candidates[0].Content.Parts[0].Text}
-
-	// Add metadata if usage information is available
-	if response.UsageMetadata != nil {
-		result.Metadata = Metadata{
-			"total_tokens":      response.UsageMetadata.TotalTokenCount,
-			"prompt_tokens":     response.UsageMetadata.PromptTokenCount,
-			"completion_tokens": response.UsageMetadata.CandidatesTokenCount,
-		}
-	}
-
-	return result, nil
+	return &Response{
+		Text:  response.Candidates[0].Content.Parts[0].Text,
+		Usage: response.UsageMetadata.toUsage(),
+	}, nil
 }
 
 // streamCall implements the provider interface for Google streaming
@@ -250,30 +262,39 @@ func (p *GoogleProvider) streamCall(ctx context.Context, messages []Message, cfg
 	go func() {
 		defer close(ch)
 
+		// usageMetadata is cumulative and repeated on chunks; report the last one
+		var usage *geminiUsage
 		err := parseSSEStream(respBody, func(msg sseMessage) error {
-			processGeminiSSEMessage(msg, ch)
+			if u := processGeminiSSEMessage(msg, ch); u != nil {
+				usage = u
+			}
 			return nil
 		})
 
 		if err != nil {
 			ch <- StreamChunk{Error: fmt.Errorf("SSE stream error: %w", err)}
+			return
+		}
+		if usage != nil {
+			ch <- StreamChunk{Usage: usage.toUsage()}
 		}
 	}()
 
 	return &StreamResponse{Stream: ch}, nil
 }
 
-// processGeminiSSEMessage processes individual Gemini SSE messages
-func processGeminiSSEMessage(msg sseMessage, ch chan StreamChunk) {
+// processGeminiSSEMessage processes individual Gemini SSE messages and
+// returns the usage block of the chunk, if present
+func processGeminiSSEMessage(msg sseMessage, ch chan StreamChunk) *geminiUsage {
 	if len(msg.Data) == 0 {
-		return
+		return nil
 	}
 
 	// Parse JSON
 	var streamResp geminiStreamResponse
 	if err := json.Unmarshal(msg.Data, &streamResp); err != nil {
 		ch <- StreamChunk{Error: fmt.Errorf("json parse error: %w", err)}
-		return
+		return nil
 	}
 
 	// Check if we have candidates with content
@@ -286,17 +307,7 @@ func processGeminiSSEMessage(msg sseMessage, ch chan StreamChunk) {
 		}
 	}
 
-	// Check if this chunk contains usage metadata
-	if streamResp.UsageMetadata != nil {
-		meta := Metadata{
-			"total_tokens":      streamResp.UsageMetadata.TotalTokenCount,
-			"prompt_tokens":     streamResp.UsageMetadata.PromptTokenCount,
-			"completion_tokens": streamResp.UsageMetadata.CandidatesTokenCount,
-		}
-		ch <- StreamChunk{
-			Meta: &meta,
-		}
-	}
+	return streamResp.UsageMetadata
 }
 
 type googleBatchEmbeddingRequest struct {
