@@ -9,6 +9,7 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 - Google
 - OpenRouter (via OpenAI-compatible API)
 - xAI (Grok)
+- TypeSafe (Jev) - decision calls only, see [Decision Calls](#decision-calls-typesafe-jev)
 - Local CLI tools (Claude Code, Codex, Gemini) - opt-in, see [Local CLI Providers](#local-cli-providers)
 
 ## Installation
@@ -38,7 +39,7 @@ func main() {
     // Create client with explicit API keys
     client, err := echo.NewCommonClient(map[string]string{
         "openai": "your-openai-key",
-    }, echo.WithModel("openai/gpt-5"))
+    }, echo.WithModel("openai/gpt-6.1-sol"))
     if err != nil {
         panic(err)
     }
@@ -55,7 +56,7 @@ func main() {
 Pass `nil` as keys to auto-detect API keys from environment variables:
 
 ```go
-client, err := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-5"))
+client, err := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-6.1-sol"))
 ```
 
 ### Provider-Specific Clients
@@ -64,25 +65,28 @@ If you only need a single provider, use the dedicated constructors:
 
 ```go
 // OpenAI
-client := echo.NewOpenAIClient("your-api-key", "gpt-5")
+client := echo.NewOpenAIClient("your-api-key", "gpt-6.1-sol")
 
 // Anthropic
-client := echo.NewAnthropicClient("your-api-key", "claude-sonnet-4-5")
+client := echo.NewAnthropicClient("your-api-key", "claude-sonnet-5-5")
 
 // Google
-client := echo.NewGoogleClient("your-api-key", "gemini-2.5-pro")
+client := echo.NewGoogleClient("your-api-key", "gemini-4-argon")
 
 // xAI (Grok)
-client := echo.NewXAIClient("your-api-key", "grok-4-0709")
+client := echo.NewXAIClient("your-api-key", "grok-4.7")
 
 // Voyage AI (embeddings & reranking)
 client := echo.NewVoyageClient("your-api-key", "voyage-4-large")
+
+// TypeSafe (Jev decision calls)
+client := echo.NewTypeSafeClient("your-api-key", "jev-latest")
 ```
 
 These accept the same `CallOption` options as `NewCommonClient`:
 
 ```go
-client := echo.NewOpenAIClient("your-api-key", "gpt-5",
+client := echo.NewOpenAIClient("your-api-key", "gpt-6.1-sol",
     echo.WithSystemMessage("You are a helpful assistant."),
     echo.WithTemperature(0.7),
 )
@@ -98,11 +102,21 @@ Use convenient aliases instead of full model names:
 // - balanced: Good balance of quality and speed
 // - light: Fast and economical
 
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/best"))      // Uses gpt-5.2
-client, _ := echo.NewCommonClient(nil, echo.WithModel("anthropic/balanced")) // Uses claude-opus-4-5
-client, _ := echo.NewCommonClient(nil, echo.WithModel("google/light"))      // Uses gemini-2.5-flash
-client, _ := echo.NewCommonClient(nil, echo.WithModel("xai/best"))          // Uses grok-4-0709
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/best"))        // Uses gpt-6-astra
+client, _ := echo.NewCommonClient(nil, echo.WithModel("anthropic/balanced")) // Uses claude-sonnet-5-5
+client, _ := echo.NewCommonClient(nil, echo.WithModel("google/light"))       // Uses gemini-3.5-flash-lite
+client, _ := echo.NewCommonClient(nil, echo.WithModel("xai/best"))           // Uses grok-4.7
 ```
+
+| Provider | `best` | `balanced` | `light` |
+|----------|--------|------------|---------|
+| openai | gpt-6-astra | gpt-6.1-sol | gpt-6-luna |
+| anthropic | claude-fable-5-1 | claude-sonnet-5-5 | claude-haiku-5-5 |
+| google | gemini-4-argon | gemini-3.8-flash | gemini-3.5-flash-lite |
+| xai | grok-4.7 | grok-4.3 | grok-4.20-0309-non-reasoning |
+| openrouter | openai/gpt-6-astra | openai/gpt-6.1-sol | openai/gpt-6-luna |
+| voyage (embeddings) | voyage-4-large | voyage-4 | voyage-4-lite |
+| typesafe | jev-latest | jev-latest | jev-latest |
 
 ### Environment Variables
 
@@ -121,9 +135,10 @@ os.Setenv("OPENAI_API_KEY", "your-openai-key")
 os.Setenv("ANTHROPIC_API_KEY", "your-anthropic-key")
 os.Setenv("GOOGLE_API_KEY", "your-google-key")
 os.Setenv("XAI_API_KEY", "your-xai-key")
+os.Setenv("TYPESAFE_API_KEY", "your-typesafe-key")
 
 // API key is automatically selected based on provider
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-5"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-6.1-sol"))
 ```
 
 ## Message Chains
@@ -215,19 +230,19 @@ The library supports switching providers on a per-call basis using `WithModel`:
 
 ```go
 // Create a client with a default provider
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-4"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-6.1-sol"))
 
 // Use different providers for different calls
 resp1, _ := client.Complete(ctx, echo.QuickMessage("Analyze this text"),
-    echo.WithModel("anthropic/claude-3.5-sonnet"), // Use Anthropic for analysis
+    echo.WithModel("anthropic/claude-opus-5-5"), // Use Anthropic for analysis
 )
 
 resp2, _ := client.Complete(ctx, echo.QuickMessage("Generate an image description"),
-    echo.WithModel("google/gemini-2.5-pro"), // Use Google for creative tasks
+    echo.WithModel("google/gemini-4-argon"), // Use Google for creative tasks
 )
 
 resp3, _ := client.Complete(ctx, echo.QuickMessage("Quick calculation"),
-    echo.WithModel("openai/gpt-5-mini"), // Use a lighter model for simple tasks
+    echo.WithModel("openai/gpt-6-luna"), // Use a lighter model for simple tasks
 )
 ```
 
@@ -250,6 +265,98 @@ resp, err := client.Complete(ctx, echo.QuickMessage("Write a story"),
 - `WithBaseURL(string)` - Override the API base URL (useful for custom endpoints)
 - `WithEndPoint(string)` - Specify endpoint routing (primarily for OpenRouter provider selection)
 - `WithStoreData(bool)` - Control server-side storage (xAI only, defaults to false for privacy)
+
+## Token Usage
+
+Every response carries a normalized `Usage` struct (`resp.Usage`), or `nil` when the provider
+does not report usage (Google embeddings, local CLI providers):
+
+```go
+resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"))
+if u := resp.Usage; u != nil {
+    fmt.Println(u.InputTokens, u.OutputTokens, u.TotalTokens)
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `Model` | Resolved `provider/model` used for the call (aliases expanded) |
+| `InputTokens` | All input tokens, including cached ones |
+| `CachedInputTokens` | Input tokens read from cache (subset of `InputTokens`) |
+| `CacheWriteTokens` | Input tokens written to cache, e.g. Anthropic cache creation (subset of `InputTokens`) |
+| `OutputTokens` | All output tokens, including reasoning/thinking |
+| `ReasoningTokens` | Reasoning/thinking tokens (subset of `OutputTokens`) |
+| `TotalTokens` | Total tokens |
+| `CostUSD` | Charged amount, only when the provider reports it (OpenRouter); otherwise `nil` |
+
+The core package does not compute prices; see [Cost Calculation](#cost-calculation) for the
+optional `pricing` package. Use `Usage.Add` to accumulate token totals across calls. The same struct is available on
+`EmbeddingResponse`, `RerankResponse` and `DecisionResponse`. When streaming, usage arrives on a
+dedicated chunk near the end of the stream:
+
+```go
+for chunk := range stream.Stream {
+    if chunk.Usage != nil {
+        total.Add(chunk.Usage)
+    }
+}
+```
+
+## Cost Calculation
+
+The optional `github.com/mkozhukh/echo/pricing` package turns `Usage` into USD. It ships with a
+built-in price table: a [models.dev](https://models.dev) snapshot for OpenAI, Anthropic, Google, xAI
+and OpenRouter, plus [Voyage AI](https://docs.voyageai.com/docs/pricing) and TypeSafe Jev prices.
+Prices are USD per 1M tokens and take cached input, cache writes, separately priced reasoning and
+context tiers (e.g. Gemini over 200k tokens) into account. Free tiers, batch discounts and
+account-specific rates are not.
+
+```go
+import "github.com/mkozhukh/echo/pricing"
+
+resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"))
+if cost, ok := pricing.Default().Cost(resp.Usage); ok {
+    fmt.Printf("$%.6f (input $%.6f, output $%.6f)\n", cost.Total, cost.Input, cost.Output)
+}
+```
+
+`ok` is false when no price is known for the model (local llama.cpp / CLI providers, fine-tunes,
+models missing from the table). A cost reported by the provider itself (OpenRouter) is used as is.
+
+### Cost in every response
+
+Pass a price table to the client and `Usage.CostUSD` is filled on every response, including the
+usage chunk of streams, so results can be served or logged with their cost attached:
+
+```go
+client, _ := echo.NewCommonClient(nil,
+    echo.WithModel("anthropic/balanced"),
+    echo.WithPricer(pricing.Default()),
+)
+
+resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"))
+json.NewEncoder(w).Encode(resp) // {"text": "...", "usage": {"model": "...", ..., "cost_usd": 0.0012}}
+```
+
+`WithPricer` accepts any `echo.Pricer`, so you can plug in your own price source. To enrich a
+`Usage` manually, use `prices.Enrich(&usage)`.
+
+### Fresh or custom prices
+
+```go
+prices, err := pricing.Fetch(ctx) // latest models.dev data; on error returns the built-in table and err
+if err != nil {
+    log.Println("using built-in prices:", err)
+}
+
+prices.Save(file)                    // cache it...
+prices, err = pricing.Load(file)     // ...and load it on the next start
+
+prices.Set("openai/my-finetune", pricing.Price{Rates: pricing.Rates{Input: 3, Output: 12}})
+```
+
+`pricing.Default()` is shared by the whole process; call `Clone()` before `Set` if you need an
+isolated table. The built-in snapshot is refreshed with `go generate ./pricing`.
 
 ## Streaming Responses
 
@@ -292,17 +399,17 @@ OpenRouter provides access to multiple LLM providers through a single API:
 // Basic usage with any OpenRouter model
 client, _ := echo.NewCommonClient(map[string]string{
     "openrouter": "your-openrouter-key",
-}, echo.WithModel("openrouter/claude-3.5-sonnet"))
+}, echo.WithModel("openrouter/anthropic/claude-sonnet-5.5"))
 ```
 
 you can specify which underlying provider infrastructure to use:
 
 ```go
 // Specify provider routing with @ syntax in model name
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/claude-3.5-sonnet@aws"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/anthropic/claude-sonnet-5.5@amazon-bedrock"))
 
 // Multiple providers for fallback (comma-separated)
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/gpt-4@azure,openai"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/openai/gpt-6.1-sol@azure,openai"))
 ```
 
 ### Using xAI (Grok)
@@ -313,7 +420,7 @@ xAI provides access to Grok models:
 // Basic usage
 client, _ := echo.NewCommonClient(map[string]string{
     "xai": "your-xai-key",
-}, echo.WithModel("xai/grok-4-0709"))
+}, echo.WithModel("xai/grok-4.7"))
 
 // Server-side storage is disabled by default for privacy
 // To explicitly enable storage:
@@ -321,6 +428,46 @@ resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"),
     echo.WithStoreData(true),
 )
 ```
+
+## Decision Calls (TypeSafe Jev)
+
+[TypeSafe Jev](https://docs.typesafe.ai/introduction) answers typed questions about a state
+instead of generating text. Use `Decide` with three question types:
+
+- `Choice` - picks one option; returns the choice, probabilities and confidence
+- `Score` - scores the state on ordered levels; returns a score (can fall between levels), probabilities and confidence
+- `Noul` - probability (0..1) that a statement is true
+
+```go
+client, _ := echo.NewCommonClient(nil, echo.WithModel("typesafe/jev-latest"))
+
+resp, err := client.Decide(ctx, ticketText, echo.Questions{
+    "type": echo.Choice("What is the main request?",
+        echo.Option{Name: "refund", Description: "wants money back"},
+        echo.Option{Name: "bug", Description: "reports a defect"},
+    ),
+    "anger":    echo.Score("How frustrated is the customer?", "calm", "annoyed", "furious"),
+    "escalate": echo.Noul("The customer threatens to cancel"),
+})
+if err != nil {
+    panic(err)
+}
+
+if kind, conf := resp.Choice("type"); kind == "refund" && conf > 0.8 {
+    // ...
+}
+fmt.Println(resp.Score("anger"), resp.Noul("escalate"))
+
+// Full answer details: probabilities, legend, confidence
+fmt.Println(resp.Answers["anger"].Probabilities)
+```
+
+The state can be a string or any JSON-serializable value. Options are sent in the declared order.
+Use `WithCriteria` to clarify a `Noul` question, or build a `Question` literal for object/array instructions.
+Token usage is in `resp.Usage` (see [Token Usage](#token-usage)).
+
+Other providers return a "does not support decisions" error for `Decide`; the `mock` provider returns deterministic
+answers (first option, lowest level, 0.5) for tests. TypeSafe supports only `Decide`.
 
 ## E2E Testing
 

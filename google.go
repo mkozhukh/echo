@@ -14,59 +14,71 @@ type GoogleProvider struct {
 }
 
 // Gemini-specific request/response structures
-type GeminiRequest struct {
-	Contents          []GeminiContent         `json:"contents"`
-	SystemInstruction *GeminiContent          `json:"systemInstruction,omitempty"`
-	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
+type geminiRequest struct {
+	Contents          []geminiContent         `json:"contents"`
+	SystemInstruction *geminiContent          `json:"systemInstruction,omitempty"`
+	GenerationConfig  *geminiGenerationConfig `json:"generationConfig,omitempty"`
 }
 
-// GeminiGenerationConfig contains generation parameters for Gemini requests
-type GeminiGenerationConfig struct {
+// geminiGenerationConfig contains generation parameters for Gemini requests
+type geminiGenerationConfig struct {
 	Temperature      *float32              `json:"temperature,omitempty"`
 	MaxOutputTokens  *int                  `json:"maxOutputTokens,omitempty"`
 	ResponseMimeType string                `json:"responseMimeType,omitempty"`
 	ResponseSchema   any                   `json:"responseSchema,omitempty"`
-	ThinkingConfig   *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
+	ThinkingConfig   *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
 }
 
-// GeminiThinkingConfig contains thinking/reasoning configuration
-type GeminiThinkingConfig struct {
+// geminiThinkingConfig contains thinking/reasoning configuration
+type geminiThinkingConfig struct {
 	ThinkingLevel string `json:"thinkingLevel"` // "low", "medium", "high"
 }
 
-type GeminiContent struct {
+type geminiContent struct {
 	Role  string       `json:"role,omitempty"`
-	Parts []GeminiPart `json:"parts"`
+	Parts []geminiPart `json:"parts"`
 }
 
-type GeminiPart struct {
+type geminiPart struct {
 	Text string `json:"text"`
 }
 
-type GeminiError struct {
+type geminiError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Status  string `json:"status"`
 }
 
-type GeminiResponse struct {
-	Error      *GeminiError `json:"error,omitempty"`
-	Candidates []struct {
-		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"content"`
-	} `json:"candidates"`
-	UsageMetadata *struct {
-		PromptTokenCount     int `json:"promptTokenCount"`
-		CandidatesTokenCount int `json:"candidatesTokenCount"`
-		TotalTokenCount      int `json:"totalTokenCount"`
-	} `json:"usageMetadata,omitempty"`
+// geminiUsage is the usageMetadata block of Gemini responses.
+// promptTokenCount includes cached tokens; thinking tokens are reported
+// separately from candidatesTokenCount but billed as output.
+type geminiUsage struct {
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount"`
+	TotalTokenCount         int `json:"totalTokenCount"`
 }
 
-// GeminiStreamResponse represents a streaming response chunk from Gemini
-type GeminiStreamResponse struct {
+func (u *geminiUsage) toUsage() *Usage {
+	if u == nil {
+		return nil
+	}
+	out := &Usage{
+		InputTokens:       u.PromptTokenCount,
+		CachedInputTokens: u.CachedContentTokenCount,
+		OutputTokens:      u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		ReasoningTokens:   u.ThoughtsTokenCount,
+		TotalTokens:       u.TotalTokenCount,
+	}
+	if out.TotalTokens == 0 {
+		out.TotalTokens = out.InputTokens + out.OutputTokens
+	}
+	return out
+}
+
+type geminiResponse struct {
+	Error      *geminiError `json:"error,omitempty"`
 	Candidates []struct {
 		Content struct {
 			Parts []struct {
@@ -74,11 +86,19 @@ type GeminiStreamResponse struct {
 			} `json:"parts"`
 		} `json:"content"`
 	} `json:"candidates"`
-	UsageMetadata *struct {
-		PromptTokenCount     int `json:"promptTokenCount"`
-		CandidatesTokenCount int `json:"candidatesTokenCount"`
-		TotalTokenCount      int `json:"totalTokenCount"`
-	} `json:"usageMetadata,omitempty"`
+	UsageMetadata *geminiUsage `json:"usageMetadata,omitempty"`
+}
+
+// geminiStreamResponse represents a streaming response chunk from Gemini
+type geminiStreamResponse struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+	UsageMetadata *geminiUsage `json:"usageMetadata,omitempty"`
 }
 
 // NewGoogleClient creates a new Google client (deprecated, kept for compatibility)
@@ -95,14 +115,14 @@ func NewGoogleClient(apiKey, model string, opts ...CallOption) Client {
 }
 
 // prepareGoogleRequest builds the Gemini request with the given configuration
-func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, error) {
+func prepareGoogleRequest(messages []Message, cfg CallConfig) (geminiRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return GeminiRequest{}, fmt.Errorf("invalid message chain: %w", err)
+		return geminiRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to Gemini format
-	geminiContents := []GeminiContent{}
+	geminiContents := []geminiContent{}
 	var systemMsg string
 
 	for _, msg := range messages {
@@ -110,16 +130,16 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 		case System:
 			systemMsg = msg.Content
 		case User:
-			geminiContents = append(geminiContents, GeminiContent{
+			geminiContents = append(geminiContents, geminiContent{
 				Role: "user",
-				Parts: []GeminiPart{
+				Parts: []geminiPart{
 					{Text: msg.Content},
 				},
 			})
 		case Agent:
-			geminiContents = append(geminiContents, GeminiContent{
+			geminiContents = append(geminiContents, geminiContent{
 				Role: "model",
-				Parts: []GeminiPart{
+				Parts: []geminiPart{
 					{Text: msg.Content},
 				},
 			})
@@ -127,20 +147,20 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 	}
 
 	// Create Gemini-specific request
-	geminiReq := GeminiRequest{
+	geminiReq := geminiRequest{
 		Contents: geminiContents,
 	}
 
 	// Handle system instruction - WithSystemMessage overrides message chain system
 	if cfg.SystemMsg != "" {
-		geminiReq.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
+		geminiReq.SystemInstruction = &geminiContent{
+			Parts: []geminiPart{
 				{Text: cfg.SystemMsg},
 			},
 		}
 	} else if systemMsg != "" {
-		geminiReq.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
+		geminiReq.SystemInstruction = &geminiContent{
+			Parts: []geminiPart{
 				{Text: systemMsg},
 			},
 		}
@@ -148,7 +168,7 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 
 	// Add generation config if temperature, max tokens, structured output, or reasoning effort are set
 	if cfg.Temperature != nil || cfg.MaxTokens != nil || cfg.StructuredOutput != nil || cfg.ReasoningEffort != "" {
-		geminiReq.GenerationConfig = &GeminiGenerationConfig{
+		geminiReq.GenerationConfig = &geminiGenerationConfig{
 			Temperature:     cfg.Temperature,
 			MaxOutputTokens: cfg.MaxTokens,
 		}
@@ -161,7 +181,7 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 
 		// Add thinking/reasoning configuration
 		if cfg.ReasoningEffort != "" {
-			geminiReq.GenerationConfig.ThinkingConfig = &GeminiThinkingConfig{
+			geminiReq.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{
 				ThinkingLevel: cfg.ReasoningEffort,
 			}
 		}
@@ -184,7 +204,7 @@ func (p *GoogleProvider) call(ctx context.Context, messages []Message, cfg CallC
 	}
 
 	// Call the Gemini API using shared HTTP function
-	var response GeminiResponse
+	var response geminiResponse
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("x-goog-api-key", p.Key)
 	}, geminiReq, &response)
@@ -205,18 +225,10 @@ func (p *GoogleProvider) call(ctx context.Context, messages []Message, cfg CallC
 		return nil, fmt.Errorf("no content parts in Gemini response")
 	}
 
-	result := &Response{Text: response.Candidates[0].Content.Parts[0].Text}
-
-	// Add metadata if usage information is available
-	if response.UsageMetadata != nil {
-		result.Metadata = Metadata{
-			"total_tokens":      response.UsageMetadata.TotalTokenCount,
-			"prompt_tokens":     response.UsageMetadata.PromptTokenCount,
-			"completion_tokens": response.UsageMetadata.CandidatesTokenCount,
-		}
-	}
-
-	return result, nil
+	return &Response{
+		Text:  response.Candidates[0].Content.Parts[0].Text,
+		Usage: response.UsageMetadata.toUsage(),
+	}, nil
 }
 
 // streamCall implements the provider interface for Google streaming
@@ -250,30 +262,39 @@ func (p *GoogleProvider) streamCall(ctx context.Context, messages []Message, cfg
 	go func() {
 		defer close(ch)
 
-		err := parseSSEStream(respBody, func(msg SSEMessage) error {
-			processGeminiSSEMessage(msg, ch)
+		// usageMetadata is cumulative and repeated on chunks; report the last one
+		var usage *geminiUsage
+		err := parseSSEStream(respBody, func(msg sseMessage) error {
+			if u := processGeminiSSEMessage(msg, ch); u != nil {
+				usage = u
+			}
 			return nil
 		})
 
 		if err != nil {
 			ch <- StreamChunk{Error: fmt.Errorf("SSE stream error: %w", err)}
+			return
+		}
+		if usage != nil {
+			ch <- StreamChunk{Usage: usage.toUsage()}
 		}
 	}()
 
 	return &StreamResponse{Stream: ch}, nil
 }
 
-// processGeminiSSEMessage processes individual Gemini SSE messages
-func processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
+// processGeminiSSEMessage processes individual Gemini SSE messages and
+// returns the usage block of the chunk, if present
+func processGeminiSSEMessage(msg sseMessage, ch chan StreamChunk) *geminiUsage {
 	if len(msg.Data) == 0 {
-		return
+		return nil
 	}
 
 	// Parse JSON
-	var streamResp GeminiStreamResponse
+	var streamResp geminiStreamResponse
 	if err := json.Unmarshal(msg.Data, &streamResp); err != nil {
 		ch <- StreamChunk{Error: fmt.Errorf("json parse error: %w", err)}
-		return
+		return nil
 	}
 
 	// Check if we have candidates with content
@@ -286,42 +307,20 @@ func processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
 		}
 	}
 
-	// Check if this chunk contains usage metadata
-	if streamResp.UsageMetadata != nil {
-		meta := Metadata{
-			"total_tokens":      streamResp.UsageMetadata.TotalTokenCount,
-			"prompt_tokens":     streamResp.UsageMetadata.PromptTokenCount,
-			"completion_tokens": streamResp.UsageMetadata.CandidatesTokenCount,
-		}
-		ch <- StreamChunk{
-			Meta: &meta,
-		}
-	}
+	return streamResp.UsageMetadata
 }
 
-// Google Embedding structures
-type GoogleEmbeddingRequest struct {
-	Content GeminiContent `json:"content"`
+type googleBatchEmbeddingRequest struct {
+	Requests []googleBatchEmbeddingRequestItem `json:"requests"`
 }
 
-type GoogleEmbeddingResponse struct {
-	Error     *GeminiError `json:"error,omitempty"`
-	Embedding struct {
-		Values []float32 `json:"values"`
-	} `json:"embedding"`
-}
-
-type GoogleBatchEmbeddingRequest struct {
-	Requests []GoogleBatchEmbeddingRequestItem `json:"requests"`
-}
-
-type GoogleBatchEmbeddingRequestItem struct {
+type googleBatchEmbeddingRequestItem struct {
 	Model   string        `json:"model"`
-	Content GeminiContent `json:"content"`
+	Content geminiContent `json:"content"`
 }
 
-type GoogleBatchEmbeddingResponse struct {
-	Error      *GeminiError `json:"error,omitempty"`
+type googleBatchEmbeddingResponse struct {
+	Error      *geminiError `json:"error,omitempty"`
 	Embeddings []struct {
 		Values []float32 `json:"values"`
 	} `json:"embeddings"`
@@ -329,24 +328,24 @@ type GoogleBatchEmbeddingResponse struct {
 
 // getEmbeddings implements the provider interface for Google embeddings
 func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	// Use provided model or default to text-embedding-004
+	// Use provided model or default to gemini-embedding-2
 	model := cfg.Model
 	if model == "" {
-		model = "text-embedding-004"
+		model = "gemini-embedding-2"
 	}
 
 	// Build batch request
-	requests := make([]GoogleBatchEmbeddingRequestItem, len(texts))
+	requests := make([]googleBatchEmbeddingRequestItem, len(texts))
 	for i, text := range texts {
-		requests[i] = GoogleBatchEmbeddingRequestItem{
+		requests[i] = googleBatchEmbeddingRequestItem{
 			Model: "models/" + model,
-			Content: GeminiContent{
-				Parts: []GeminiPart{{Text: text}},
+			Content: geminiContent{
+				Parts: []geminiPart{{Text: text}},
 			},
 		}
 	}
 
-	body := GoogleBatchEmbeddingRequest{Requests: requests}
+	body := googleBatchEmbeddingRequest{Requests: requests}
 
 	// Build the base URL with model
 	baseURL := cfg.BaseURL
@@ -354,7 +353,7 @@ func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":batchEmbedContents"
 	}
 
-	resp := GoogleBatchEmbeddingResponse{}
+	resp := googleBatchEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("x-goog-api-key", p.Key)
 	}, body, &resp)
@@ -380,292 +379,4 @@ func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		Embeddings: embeddings,
 		Metadata:   Metadata{},
 	}, nil
-}
-
-// reRank implements the provider interface for Google
-// Note: Google does not currently support reranking API
-func (p *GoogleProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("Google does not support reranking API")
-}
-
-// parseCompletionRequest parses an HTTP request into a CompletionRequest
-// Converts from Gemini format to OpenAI-compatible format
-func (p *GoogleProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	var geminiReq GeminiRequest
-	if err := json.NewDecoder(req.Body).Decode(&geminiReq); err != nil {
-		return nil, fmt.Errorf("failed to parse Gemini completion request: %w", err)
-	}
-
-	// Convert Gemini contents to OpenAI messages
-	messages := make([]OpenAIMessage, 0, len(geminiReq.Contents)+1)
-
-	// Add system instruction as first message if present
-	if geminiReq.SystemInstruction != nil && len(geminiReq.SystemInstruction.Parts) > 0 {
-		// Combine all parts into a single system message
-		var systemContent string
-		for _, part := range geminiReq.SystemInstruction.Parts {
-			systemContent += part.Text
-		}
-		messages = append(messages, OpenAIMessage{
-			Role:    "system",
-			Content: systemContent,
-		})
-	}
-
-	// Convert user/model messages
-	for _, content := range geminiReq.Contents {
-		// Combine all parts into a single message
-		var messageContent string
-		for _, part := range content.Parts {
-			messageContent += part.Text
-		}
-
-		// Map Gemini roles to OpenAI roles
-		role := content.Role
-		if role == "model" {
-			role = "assistant"
-		}
-
-		messages = append(messages, OpenAIMessage{
-			Role:    role,
-			Content: messageContent,
-		})
-	}
-
-	// Extract model name from request (if available, otherwise empty)
-	model := ""
-
-	// Extract temperature and max tokens from generation config
-	var temperature *float32
-	var maxTokens *int
-	if geminiReq.GenerationConfig != nil {
-		temperature = geminiReq.GenerationConfig.Temperature
-		maxTokens = geminiReq.GenerationConfig.MaxOutputTokens
-	}
-
-	completionReq := &CompletionRequest{
-		Model:       model,
-		Temperature: temperature,
-		MaxTokens:   maxTokens,
-		Messages:    messages,
-		Stream:      false, // Default, can't determine from request
-	}
-
-	return completionReq, nil
-}
-
-// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-// Converts from Google batch embedding format to unified format
-func (p *GoogleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	var googleReq GoogleBatchEmbeddingRequest
-	if err := json.NewDecoder(req.Body).Decode(&googleReq); err != nil {
-		return nil, fmt.Errorf("failed to parse Google embedding request: %w", err)
-	}
-
-	inputs := make([]string, len(googleReq.Requests))
-	for i, r := range googleReq.Requests {
-		for _, part := range r.Content.Parts {
-			inputs[i] += part.Text
-		}
-	}
-
-	embeddingReq := &EmbeddingRequest{
-		Model: "", // Model is typically in the URL for Google, not in the request body
-		Input: inputs,
-	}
-
-	return embeddingReq, nil
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-// Google does not support reranking, so this returns an error
-func (p *GoogleProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("Google does not support reranking API")
-}
-
-// buildCompletionRequest builds and executes a completion request, returning a unified response
-func (p *GoogleProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
-	// Convert CompletionRequest to GeminiRequest
-	geminiReq := GeminiRequest{
-		Contents: make([]GeminiContent, 0, len(req.Messages)),
-	}
-
-	// Process messages
-	var systemMsg string
-	for _, msg := range req.Messages {
-		if msg.Role == "system" {
-			systemMsg = msg.Content
-		} else {
-			role := msg.Role
-			if role == "assistant" {
-				role = "model" // Gemini uses "model" instead of "assistant"
-			}
-			geminiReq.Contents = append(geminiReq.Contents, GeminiContent{
-				Role: role,
-				Parts: []GeminiPart{
-					{Text: msg.Content},
-				},
-			})
-		}
-	}
-
-	// Add system instruction if present
-	if systemMsg != "" {
-		geminiReq.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
-				{Text: systemMsg},
-			},
-		}
-	}
-
-	// Add generation config if needed
-	if req.Temperature != nil || req.MaxTokens != nil {
-		geminiReq.GenerationConfig = &GeminiGenerationConfig{
-			Temperature:     req.Temperature,
-			MaxOutputTokens: req.MaxTokens,
-		}
-	}
-
-	// Build the base URL with model
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + req.Model + ":generateContent"
-	}
-
-	// Make the API call
-	var geminiResp GeminiResponse
-	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("x-goog-api-key", p.Key)
-	}, geminiReq, &geminiResp)
-	if err != nil {
-		return nil, fmt.Errorf("Google API call failed: %w", err)
-	}
-
-	// Check for errors in the response
-	if geminiResp.Error != nil {
-		return nil, fmt.Errorf("Google API error: %s", geminiResp.Error.Message)
-	}
-
-	// Convert to unified CompletionResponse
-	completionResp := &CompletionResponse{
-		ID:      "",
-		Object:  "chat.completion",
-		Created: 0,
-		Model:   req.Model,
-		Choices: make([]struct {
-			Index   int `json:"index"`
-			Message struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason,omitempty"`
-		}, 1),
-	}
-
-	// Extract text from response
-	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-		completionResp.Choices[0].Index = 0
-		completionResp.Choices[0].Message.Role = "assistant"
-		completionResp.Choices[0].Message.Content = geminiResp.Candidates[0].Content.Parts[0].Text
-		completionResp.Choices[0].FinishReason = "stop"
-	}
-
-	// Add usage information if available
-	if geminiResp.UsageMetadata != nil {
-		completionResp.Usage = &struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		}{
-			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-		}
-	}
-
-	return completionResp, nil
-}
-
-// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-func (p *GoogleProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	// Use provided model or default to text-embedding-004
-	model := req.Model
-	if model == "" {
-		model = "text-embedding-004"
-	}
-
-	// Build batch request
-	requests := make([]GoogleBatchEmbeddingRequestItem, len(req.Input))
-	for i, text := range req.Input {
-		requests[i] = GoogleBatchEmbeddingRequestItem{
-			Model: "models/" + model,
-			Content: GeminiContent{
-				Parts: []GeminiPart{{Text: text}},
-			},
-		}
-	}
-
-	body := GoogleBatchEmbeddingRequest{Requests: requests}
-
-	// Build the base URL with model
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":batchEmbedContents"
-	}
-
-	var googleResp GoogleBatchEmbeddingResponse
-	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("x-goog-api-key", p.Key)
-	}, body, &googleResp)
-	if err != nil {
-		return nil, fmt.Errorf("Google embedding API call failed: %w", err)
-	}
-
-	// Check for errors in the response
-	if googleResp.Error != nil {
-		return nil, fmt.Errorf("Google embedding API error: %s", googleResp.Error.Message)
-	}
-
-	// Convert to unified response
-	unifiedResp := &UnifiedEmbeddingResponse{
-		Object: "list",
-		Data: make([]struct {
-			Object    string    `json:"object,omitempty"`
-			Embedding []float32 `json:"embedding"`
-			Index     int       `json:"index"`
-		}, len(googleResp.Embeddings)),
-		Model: model,
-	}
-
-	for i, emb := range googleResp.Embeddings {
-		unifiedResp.Data[i].Object = "embedding"
-		unifiedResp.Data[i].Embedding = emb.Values
-		unifiedResp.Data[i].Index = i
-	}
-
-	return unifiedResp, nil
-}
-
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-// Google does not support reranking, so this returns an error
-func (p *GoogleProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("Google does not support reranking API")
-}
-
-// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
-func (p *GoogleProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-func (p *GoogleProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-// Google does not support reranking, so this returns an error
-func (p *GoogleProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("Google does not support reranking API")
 }

@@ -8,83 +8,106 @@ import (
 	"strings"
 )
 
-type AnthropicMessage struct {
+type anthropicMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type AnthropicRequest struct {
+type anthropicRequest struct {
 	Model        string                 `json:"model"`
-	Messages     []AnthropicMessage     `json:"messages"`
+	Messages     []anthropicMessage     `json:"messages"`
 	MaxTokens    int                    `json:"max_tokens"`
 	Temperature  *float32               `json:"temperature,omitempty"`
 	System       string                 `json:"system,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
-	OutputFormat *AnthropicOutputFormat `json:"output_format,omitempty"`
-	OutputConfig *AnthropicOutputConfig `json:"output_config,omitempty"`
+	OutputFormat *anthropicOutputFormat `json:"output_format,omitempty"`
+	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
 }
 
-// AnthropicOutputFormat specifies the output format for structured output
-type AnthropicOutputFormat struct {
+// anthropicOutputFormat specifies the output format for structured output
+type anthropicOutputFormat struct {
 	Type   string `json:"type"`   // "json_schema"
 	Schema any    `json:"schema"` // JSON Schema
 }
 
-// AnthropicOutputConfig specifies output configuration for reasoning effort
-type AnthropicOutputConfig struct {
+// anthropicOutputConfig specifies output configuration for reasoning effort
+type anthropicOutputConfig struct {
 	Effort string `json:"effort"` // "low", "medium", "high"
 }
 
-type AnthropicError struct {
+type anthropicError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
 }
 
-type AnthropicResponse struct {
-	Error   *AnthropicError `json:"error,omitempty"`
+type anthropicResponse struct {
+	Error   *anthropicError `json:"error,omitempty"`
 	Content []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	StopReason string `json:"stop_reason"`
-	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	StopReason string         `json:"stop_reason"`
+	Usage      anthropicUsage `json:"usage"`
+}
+
+// anthropicUsage is the usage block of Anthropic responses.
+// input_tokens excludes cached tokens, which are reported separately.
+type anthropicUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+}
+
+func (u anthropicUsage) toUsage() *Usage {
+	input := u.InputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+	return &Usage{
+		InputTokens:       input,
+		CachedInputTokens: u.CacheReadInputTokens,
+		CacheWriteTokens:  u.CacheCreationInputTokens,
+		OutputTokens:      u.OutputTokens,
+		TotalTokens:       input + u.OutputTokens,
+	}
+}
+
+// merge applies a message_delta usage update: output tokens are cumulative,
+// other fields are updated only when present.
+func (u *anthropicUsage) merge(d *anthropicUsage) {
+	if d == nil {
+		return
+	}
+	u.OutputTokens = d.OutputTokens
+	if d.InputTokens > 0 {
+		u.InputTokens = d.InputTokens
+	}
+	if d.CacheCreationInputTokens > 0 {
+		u.CacheCreationInputTokens = d.CacheCreationInputTokens
+	}
+	if d.CacheReadInputTokens > 0 {
+		u.CacheReadInputTokens = d.CacheReadInputTokens
+	}
 }
 
 // Anthropic streaming response structures
-type AnthropicStreamEvent struct {
+type anthropicStreamEvent struct {
 	Type string `json:"type"`
 }
 
-type AnthropicMessageStart struct {
+type anthropicMessageStart struct {
 	Type    string `json:"type"`
 	Message struct {
-		ID           string  `json:"id"`
-		Type         string  `json:"type"`
-		Role         string  `json:"role"`
-		Content      []any   `json:"content"`
-		Model        string  `json:"model"`
-		StopReason   *string `json:"stop_reason"`
-		StopSequence *string `json:"stop_sequence"`
-		Usage        struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
+		ID           string         `json:"id"`
+		Type         string         `json:"type"`
+		Role         string         `json:"role"`
+		Content      []any          `json:"content"`
+		Model        string         `json:"model"`
+		StopReason   *string        `json:"stop_reason"`
+		StopSequence *string        `json:"stop_sequence"`
+		Usage        anthropicUsage `json:"usage"`
 	} `json:"message"`
 }
 
-type AnthropicContentBlockStart struct {
-	Type         string `json:"type"`
-	Index        int    `json:"index"`
-	ContentBlock struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content_block"`
-}
-
-type AnthropicContentBlockDelta struct {
+type anthropicContentBlockDelta struct {
 	Type  string `json:"type"`
 	Index int    `json:"index"`
 	Delta struct {
@@ -93,28 +116,13 @@ type AnthropicContentBlockDelta struct {
 	} `json:"delta"`
 }
 
-type AnthropicContentBlockStop struct {
-	Type  string `json:"type"`
-	Index int    `json:"index"`
-}
-
-type AnthropicMessageDelta struct {
+type anthropicMessageDelta struct {
 	Type  string `json:"type"`
 	Delta struct {
 		StopReason   *string `json:"stop_reason"`
 		StopSequence *string `json:"stop_sequence"`
 	} `json:"delta"`
-	Usage *struct {
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage,omitempty"`
-}
-
-type AnthropicMessageStop struct {
-	Type string `json:"type"`
-}
-
-type AnthropicPing struct {
-	Type string `json:"type"`
+	Usage *anthropicUsage `json:"usage,omitempty"`
 }
 
 // AnthropicProvider is a stateless provider for Anthropic API
@@ -136,14 +144,14 @@ func NewAnthropicClient(apiKey, model string, opts ...CallOption) Client {
 }
 
 // prepareAnthropicRequest builds the Anthropic request with the given configuration
-func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig) (AnthropicRequest, error) {
+func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig) (anthropicRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return AnthropicRequest{}, fmt.Errorf("invalid message chain: %w", err)
+		return anthropicRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to Anthropic format
-	anthropicMessages := []AnthropicMessage{}
+	anthropicMessages := []anthropicMessage{}
 	var systemMsg string
 
 	for _, msg := range messages {
@@ -151,12 +159,12 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 		case System:
 			systemMsg = msg.Content
 		case User:
-			anthropicMessages = append(anthropicMessages, AnthropicMessage{
+			anthropicMessages = append(anthropicMessages, anthropicMessage{
 				Role:    "user",
 				Content: msg.Content,
 			})
 		case Agent:
-			anthropicMessages = append(anthropicMessages, AnthropicMessage{
+			anthropicMessages = append(anthropicMessages, anthropicMessage{
 				Role:    "assistant",
 				Content: msg.Content,
 			})
@@ -169,7 +177,7 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 		maxTokens = *cfg.MaxTokens
 	}
 
-	body := AnthropicRequest{
+	body := anthropicRequest{
 		Model:       cfg.Model,
 		Messages:    anthropicMessages,
 		MaxTokens:   maxTokens,
@@ -186,7 +194,7 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 
 	// Handle structured output via native output_format API
 	if cfg.StructuredOutput != nil {
-		body.OutputFormat = &AnthropicOutputFormat{
+		body.OutputFormat = &anthropicOutputFormat{
 			Type:   "json_schema",
 			Schema: cfg.StructuredOutput.Schema,
 		}
@@ -194,7 +202,7 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 
 	// Handle reasoning effort via output_config
 	if cfg.ReasoningEffort != "" {
-		body.OutputConfig = &AnthropicOutputConfig{
+		body.OutputConfig = &anthropicOutputConfig{
 			Effort: cfg.ReasoningEffort,
 		}
 	}
@@ -215,7 +223,7 @@ func (p *AnthropicProvider) call(ctx context.Context, messages []Message, cfg Ca
 		baseURL = "https://api.anthropic.com/v1/messages"
 	}
 
-	resp := AnthropicResponse{}
+	resp := anthropicResponse{}
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		req.Header.Set("x-api-key", p.Key)
@@ -254,11 +262,10 @@ func (p *AnthropicProvider) call(ctx context.Context, messages []Message, cfg Ca
 	}
 
 	return &Response{
-		Text: text,
-		Metadata: map[string]any{
-			"stop_reason":   resp.StopReason,
-			"input_tokens":  resp.Usage.InputTokens,
-			"output_tokens": resp.Usage.OutputTokens,
+		Text:  text,
+		Usage: resp.Usage.toUsage(),
+		Metadata: Metadata{
+			"stop_reason": resp.StopReason,
 		},
 	}, nil
 }
@@ -303,10 +310,10 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 	go func() {
 		defer close(ch)
 
-		var totalInputTokens, totalOutputTokens int
+		var usage anthropicUsage
 
-		err := parseSSEStream(respBody, func(msg SSEMessage) error {
-			return processAnthropicSSEMessage(msg, ch, &totalInputTokens, &totalOutputTokens)
+		err := parseSSEStream(respBody, func(msg sseMessage) error {
+			return processAnthropicSSEMessage(msg, ch, &usage)
 		})
 
 		if err != nil {
@@ -318,7 +325,7 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 }
 
 // processAnthropicSSEMessage processes individual Anthropic SSE messages
-func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputTokens, totalOutputTokens *int) error {
+func processAnthropicSSEMessage(msg sseMessage, ch chan StreamChunk, usage *anthropicUsage) error {
 	if len(msg.Data) == 0 {
 		return nil
 	}
@@ -326,19 +333,18 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 	// Handle different event types
 	switch msg.Event {
 	case "message_start":
-		var messageStart AnthropicMessageStart
+		var messageStart anthropicMessageStart
 		if err := json.Unmarshal(msg.Data, &messageStart); err != nil {
 			return fmt.Errorf("json parse error for message_start: %w", err)
 		}
 		// Store initial token counts
-		*totalInputTokens = messageStart.Message.Usage.InputTokens
-		*totalOutputTokens = messageStart.Message.Usage.OutputTokens
+		*usage = messageStart.Message.Usage
 
 	case "content_block_start":
 		// Content block started, no action needed
 
 	case "content_block_delta":
-		var contentDelta AnthropicContentBlockDelta
+		var contentDelta anthropicContentBlockDelta
 		if err := json.Unmarshal(msg.Data, &contentDelta); err != nil {
 			return fmt.Errorf("json parse error for content_block_delta: %w", err)
 		}
@@ -353,23 +359,17 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 		// Content block finished, no action needed
 
 	case "message_delta":
-		var messageDelta AnthropicMessageDelta
+		var messageDelta anthropicMessageDelta
 		if err := json.Unmarshal(msg.Data, &messageDelta); err != nil {
 			return fmt.Errorf("json parse error for message_delta: %w", err)
 		}
-		// Update output token count if provided
-		if messageDelta.Usage != nil {
-			*totalOutputTokens = messageDelta.Usage.OutputTokens
-		}
+		// Update token counts if provided
+		usage.merge(messageDelta.Usage)
 
 	case "message_stop":
-		// Send final metadata
-		meta := Metadata{
-			"input_tokens":  *totalInputTokens,
-			"output_tokens": *totalOutputTokens,
-		}
+		// Send final usage
 		ch <- StreamChunk{
-			Meta: &meta,
+			Usage: usage.toUsage(),
 		}
 
 	case "ping":
@@ -377,7 +377,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 
 	default:
 		// Try to parse as generic event to handle cases without event type
-		var genericEvent AnthropicStreamEvent
+		var genericEvent anthropicStreamEvent
 		if err := json.Unmarshal(msg.Data, &genericEvent); err != nil {
 			return nil // Skip unparseable events (not an error)
 		}
@@ -385,7 +385,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 		// Handle based on type field in data
 		switch genericEvent.Type {
 		case "content_block_delta":
-			var contentDelta AnthropicContentBlockDelta
+			var contentDelta anthropicContentBlockDelta
 			if err := json.Unmarshal(msg.Data, &contentDelta); err == nil {
 				if contentDelta.Delta.Type == "text_delta" && contentDelta.Delta.Text != "" {
 					ch <- StreamChunk{
@@ -394,224 +394,16 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 				}
 			}
 		case "message_delta":
-			var messageDelta AnthropicMessageDelta
+			var messageDelta anthropicMessageDelta
 			if err := json.Unmarshal(msg.Data, &messageDelta); err == nil {
-				if messageDelta.Usage != nil {
-					*totalOutputTokens = messageDelta.Usage.OutputTokens
-				}
+				usage.merge(messageDelta.Usage)
 			}
 		case "message_stop":
-			meta := Metadata{
-				"input_tokens":  *totalInputTokens,
-				"output_tokens": *totalOutputTokens,
-			}
 			ch <- StreamChunk{
-				Meta: &meta,
+				Usage: usage.toUsage(),
 			}
 		}
 	}
 
 	return nil
-}
-
-// getEmbeddings implements the provider interface for Anthropic
-// Note: Anthropic does not currently support embeddings API
-func (p *AnthropicProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// reRank implements the provider interface for Anthropic
-// Note: Anthropic does not currently support reranking API
-func (p *AnthropicProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support reranking API")
-}
-
-// parseCompletionRequest parses an HTTP request into a CompletionRequest
-// Converts from Anthropic format to OpenAI-compatible format
-func (p *AnthropicProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	var anthropicReq AnthropicRequest
-	if err := json.NewDecoder(req.Body).Decode(&anthropicReq); err != nil {
-		return nil, fmt.Errorf("failed to parse Anthropic completion request: %w", err)
-	}
-
-	// Convert Anthropic messages to OpenAI format
-	messages := make([]OpenAIMessage, 0, len(anthropicReq.Messages)+1)
-
-	// Add system message as first message if present
-	if anthropicReq.System != "" {
-		messages = append(messages, OpenAIMessage{
-			Role:    "system",
-			Content: anthropicReq.System,
-		})
-	}
-
-	// Convert user/assistant messages
-	for _, msg := range anthropicReq.Messages {
-		messages = append(messages, OpenAIMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		})
-	}
-
-	// Convert max_tokens to OpenAI format
-	var maxTokens *int
-	if anthropicReq.MaxTokens > 0 {
-		maxTokens = &anthropicReq.MaxTokens
-	}
-
-	completionReq := &CompletionRequest{
-		Model:       anthropicReq.Model,
-		Temperature: anthropicReq.Temperature,
-		MaxTokens:   maxTokens,
-		Messages:    messages,
-		Stream:      anthropicReq.Stream,
-	}
-
-	if anthropicReq.Stream {
-		completionReq.StreamOptions = &struct {
-			IncludeUsage bool `json:"include_usage"`
-		}{
-			IncludeUsage: true,
-		}
-	}
-
-	return completionReq, nil
-}
-
-// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-// Anthropic does not support embeddings, so this returns an error
-func (p *AnthropicProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-// Anthropic does not support reranking, so this returns an error
-func (p *AnthropicProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("Anthropic does not support reranking API")
-}
-
-// buildCompletionRequest builds and executes a completion request, returning a unified response
-func (p *AnthropicProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
-	// Convert CompletionRequest to AnthropicRequest
-	anthropicReq := AnthropicRequest{
-		Model:       req.Model,
-		Temperature: req.Temperature,
-		MaxTokens:   4096, // Default
-		Stream:      req.Stream,
-	}
-
-	// Override max tokens if provided
-	if req.MaxTokens != nil {
-		anthropicReq.MaxTokens = *req.MaxTokens
-	}
-
-	// Convert messages
-	var systemMsg string
-	anthropicReq.Messages = make([]AnthropicMessage, 0, len(req.Messages))
-	for _, msg := range req.Messages {
-		if msg.Role == "system" {
-			systemMsg = msg.Content
-		} else {
-			anthropicReq.Messages = append(anthropicReq.Messages, AnthropicMessage{
-				Role:    msg.Role, // "user" or "assistant"
-				Content: msg.Content,
-			})
-		}
-	}
-	if systemMsg != "" {
-		anthropicReq.System = systemMsg
-	}
-
-	// Set default base URL if not provided
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://api.anthropic.com/v1/messages"
-	}
-
-	// Make the API call
-	var anthropicResp AnthropicResponse
-	err := callHTTPAPI(ctx, baseURL, func(httpReq *http.Request) {
-		httpReq.Header.Set("anthropic-version", "2023-06-01")
-		httpReq.Header.Set("x-api-key", p.Key)
-	}, anthropicReq, &anthropicResp)
-	if err != nil {
-		return nil, fmt.Errorf("Anthropic API call failed: %w", err)
-	}
-
-	// Check for errors in the response
-	if anthropicResp.Error != nil {
-		return nil, fmt.Errorf("Anthropic API error: %s", anthropicResp.Error.Message)
-	}
-
-	// Convert to unified CompletionResponse
-	completionResp := &CompletionResponse{
-		ID:      "",
-		Object:  "chat.completion",
-		Created: 0,
-		Model:   req.Model,
-		Choices: make([]struct {
-			Index   int `json:"index"`
-			Message struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason,omitempty"`
-		}, 1),
-	}
-
-	// Combine all text content
-	var text string
-	for _, content := range anthropicResp.Content {
-		if content.Type == "text" {
-			text += content.Text
-		}
-	}
-
-	completionResp.Choices[0].Index = 0
-	completionResp.Choices[0].Message.Role = "assistant"
-	completionResp.Choices[0].Message.Content = text
-	completionResp.Choices[0].FinishReason = anthropicResp.StopReason
-
-	// Add usage information
-	completionResp.Usage = &struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	}{
-		PromptTokens:     anthropicResp.Usage.InputTokens,
-		CompletionTokens: anthropicResp.Usage.OutputTokens,
-		TotalTokens:      anthropicResp.Usage.InputTokens + anthropicResp.Usage.OutputTokens,
-	}
-
-	return completionResp, nil
-}
-
-// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-// Anthropic does not support embeddings, so this returns an error
-func (p *AnthropicProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-// Anthropic does not support reranking, so this returns an error
-func (p *AnthropicProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support reranking API")
-}
-
-// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
-func (p *AnthropicProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-// Anthropic does not support embeddings, so this returns an error
-func (p *AnthropicProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	return fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-// Anthropic does not support reranking, so this returns an error
-func (p *AnthropicProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("Anthropic does not support reranking API")
 }

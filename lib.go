@@ -2,7 +2,6 @@ package echo
 
 import (
 	"context"
-	"net/http"
 )
 
 // Client is the main interface for LLM operations
@@ -17,43 +16,76 @@ type Client interface {
 	GetEmbeddings(ctx context.Context, texts []string, opts ...CallOption) (*EmbeddingResponse, error)
 	// ReRank reranks documents based on relevance to query
 	ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error)
-}
-
-// ProxyClient extends Client with HTTP proxy capabilities for building LLM proxies
-// that can parse requests in one provider format and forward to another
-type ProxyClient interface {
-	Client
-	// ParseComplete parses a completion request from HTTP request
-	ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error)
-	// ExecComplete executes a completion request and returns a CompletionResponse
-	ExecComplete(ctx context.Context, req *CompletionRequest, opts ...CallOption) (*CompletionResponse, error)
-	// WriteComplete writes a completion response to the response writer
-	WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error
-	// ParseEmbedding parses an embedding request from HTTP request
-	ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error)
-	// ExecEmbedding executes an embedding request and returns a UnifiedEmbeddingResponse
-	ExecEmbedding(ctx context.Context, req *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error)
-	// WriteEmbedding writes an embedding response to the response writer
-	WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error
-	// ParseRerank parses a rerank request from HTTP request
-	ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error)
-	// ExecRerank executes a rerank request and returns a UnifiedRerankResponse
-	ExecRerank(ctx context.Context, req *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error)
-	// WriteRerank writes a rerank response to the response writer
-	WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error
+	// Decide evaluates typed questions (choice, score, noul) against the state
+	// and returns structured answers. Supported by decision models (e.g. typesafe/jev-latest).
+	Decide(ctx context.Context, state any, questions Questions, opts ...CallOption) (*DecisionResponse, error)
 }
 
 type Metadata = map[string]any
 
+// Usage reports token consumption of a call, normalized across providers.
+// Prices are not computed by the library; CostUSD is set only when the
+// provider reports the charged amount directly (e.g. OpenRouter).
+type Usage struct {
+	Model             string   `json:"model,omitempty"`               // resolved "provider/model" used for the call
+	InputTokens       int      `json:"input_tokens"`                  // all input tokens, including cached ones
+	CachedInputTokens int      `json:"cached_input_tokens,omitempty"` // input tokens read from cache (subset of InputTokens)
+	CacheWriteTokens  int      `json:"cache_write_tokens,omitempty"`  // input tokens written to cache (subset of InputTokens)
+	OutputTokens      int      `json:"output_tokens"`                 // all output tokens, including reasoning
+	ReasoningTokens   int      `json:"reasoning_tokens,omitempty"`    // reasoning/thinking tokens (subset of OutputTokens)
+	TotalTokens       int      `json:"total_tokens"`
+	CostUSD           *float64 `json:"cost_usd,omitempty"` // provider-reported cost, if any
+}
+
+// Add accumulates other into u. Safe to call with a nil other.
+// Model is kept only while all accumulated usages share the same model;
+// price each call separately when mixing models.
+func (u *Usage) Add(other *Usage) {
+	if other == nil {
+		return
+	}
+	if u.isEmpty() {
+		u.Model = other.Model
+	} else if u.Model != other.Model {
+		u.Model = ""
+	}
+	u.InputTokens += other.InputTokens
+	u.CachedInputTokens += other.CachedInputTokens
+	u.CacheWriteTokens += other.CacheWriteTokens
+	u.OutputTokens += other.OutputTokens
+	u.ReasoningTokens += other.ReasoningTokens
+	u.TotalTokens += other.TotalTokens
+	if other.CostUSD != nil {
+		cost := *other.CostUSD
+		if u.CostUSD != nil {
+			cost += *u.CostUSD
+		}
+		u.CostUSD = &cost
+	}
+}
+
+func (u *Usage) isEmpty() bool {
+	return u.Model == "" && u.InputTokens == 0 && u.OutputTokens == 0 && u.TotalTokens == 0 && u.CostUSD == nil
+}
+
+// Pricer computes the cost of a call from its usage.
+// It is implemented by pricing.Prices; see WithPricer.
+type Pricer interface {
+	// USD returns the cost in USD and whether a price is known for u.Model
+	USD(u Usage) (float64, bool)
+}
+
 // Response represents the LLM response
 type Response struct {
 	Text     string   `json:"text"`
+	Usage    *Usage   `json:"usage,omitempty"` // nil when the provider does not report usage
 	Metadata Metadata `json:"metadata,omitempty"`
 }
 
 type StreamChunk struct {
 	Data  string
-	Meta  *Metadata // Set on first chunk if available
+	Usage *Usage    // Set on a dedicated chunk near the end of the stream, if reported
+	Meta  *Metadata // Provider-specific metadata (non-token), if any
 	Error error     // Set on error or completion
 }
 
@@ -64,87 +96,15 @@ type StreamResponse struct {
 // EmbeddingResponse represents the embedding response
 type EmbeddingResponse struct {
 	Embeddings [][]float32 `json:"embeddings"`
+	Usage      *Usage      `json:"usage,omitempty"`
 	Metadata   Metadata    `json:"metadata,omitempty"`
 }
 
 // RerankResponse represents the rerank response
 type RerankResponse struct {
 	Scores   []float32 `json:"scores"`
+	Usage    *Usage    `json:"usage,omitempty"`
 	Metadata Metadata  `json:"metadata,omitempty"`
-}
-
-// CompletionRequest represents a unified completion request
-// Using OpenAI format as the common format to minimize data copying
-type CompletionRequest = OpenAIRequest
-
-// EmbeddingRequest represents a unified embedding request
-// Based on OpenAI's embedding format
-type EmbeddingRequest struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
-}
-
-// RerankRequest represents a unified reranking request
-// Based on Voyage AI's rerank format
-type RerankRequest struct {
-	Model     string   `json:"model"`
-	Query     string   `json:"query"`
-	Documents []string `json:"documents"`
-}
-
-// Unified response structures for Build methods
-// Using OpenAI format as the common format to minimize data copying
-
-// CompletionResponse represents a unified completion response
-// Based on OpenAI's chat completion format
-type CompletionResponse struct {
-	ID      string `json:"id,omitempty"`
-	Object  string `json:"object,omitempty"`
-	Created int64  `json:"created,omitempty"`
-	Model   string `json:"model,omitempty"`
-	Choices []struct {
-		Index   int `json:"index"`
-		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason,omitempty"`
-	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
-}
-
-// UnifiedEmbeddingResponse represents a unified embedding response
-// Based on OpenAI's embedding format
-type UnifiedEmbeddingResponse struct {
-	Object string `json:"object,omitempty"`
-	Data   []struct {
-		Object    string    `json:"object,omitempty"`
-		Embedding []float32 `json:"embedding"`
-		Index     int       `json:"index"`
-	} `json:"data"`
-	Model string `json:"model,omitempty"`
-	Usage *struct {
-		PromptTokens int `json:"prompt_tokens"`
-		TotalTokens  int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
-}
-
-// UnifiedRerankResponse represents a unified reranking response
-// Based on Voyage AI's rerank format
-type UnifiedRerankResponse struct {
-	Results []struct {
-		Index          int     `json:"index"`
-		Document       string  `json:"document,omitempty"`
-		RelevanceScore float32 `json:"relevance_score"`
-	} `json:"results"`
-	Model string `json:"model,omitempty"`
-	Usage *struct {
-		TotalTokens int `json:"total_tokens,omitempty"`
-	} `json:"usage,omitempty"`
 }
 
 // CallOption allows optional parameters for calls
@@ -168,6 +128,7 @@ type CallConfig struct {
 	StructuredOutput *StructuredOutputConfig
 	ReasoningEffort  string // "low", "medium", "high" - controls thinking/reasoning level
 	StoreData        *bool  // xAI: set to false to disable server-side storage (default: false)
+	Pricer           Pricer // fills Usage.CostUSD when the provider does not report it
 }
 
 func WithTemperature(temp float32) CallOption {
@@ -235,5 +196,14 @@ func WithReasoningEffort(effort string) CallOption {
 func WithStoreData(store bool) CallOption {
 	return func(cfg *CallConfig) {
 		cfg.StoreData = &store
+	}
+}
+
+// WithPricer makes the client fill Usage.CostUSD of every response (including
+// the usage chunk of streams) using the given pricer, e.g. pricing.Default().
+// A cost reported by the provider itself (OpenRouter) is kept as is.
+func WithPricer(p Pricer) CallOption {
+	return func(cfg *CallConfig) {
+		cfg.Pricer = p
 	}
 }

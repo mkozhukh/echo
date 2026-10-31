@@ -3,37 +3,50 @@ package echo
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 )
 
-// provider interface for internal provider implementations
+// Provider is the core interface for provider implementations: chat completions.
+// Additional capabilities (embeddings, reranking, decisions) are optional and
+// implemented through the embedder, reranker and decider interfaces.
 type Provider interface {
 	call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error)
 	streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error)
+}
+
+// embedder is an optional provider capability for embeddings.
+type embedder interface {
 	getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error)
+}
+
+// reranker is an optional provider capability for document reranking.
+type reranker interface {
 	reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
+}
 
-	// Parse HTTP requests into unified request structures
-	parseCompletionRequest(req *http.Request) (*CompletionRequest, error)
-	parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error)
-	parseRerankRequest(req *http.Request) (*RerankRequest, error)
+// compile-time checks for provider capabilities
+var (
+	_ embedder = (*OpenAIProvider)(nil)
+	_ embedder = (*GoogleProvider)(nil)
+	_ embedder = (*VoyageProvider)(nil)
+	_ reranker = (*VoyageProvider)(nil)
+	_ decider  = (*TypeSafeProvider)(nil)
+	_ decider  = (*MockProvider)(nil)
+)
 
-	// Build methods - consume parsed requests and return unified responses
-	buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error)
-	buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error)
-	buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error)
-
-	// Write methods - write unified responses back as HTTP responses
-	writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error
-	writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error
-	writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error
+// capability returns the provider as capability T, or an error naming the provider
+func capability[T any](p Provider, providerName, feature string) (T, error) {
+	c, ok := p.(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("provider %q does not support %s", providerName, feature)
+	}
+	return c, nil
 }
 
 // CommonClient is the main client that delegates to appropriate providers
 type CommonClient struct {
-	apiKey      string
 	baseConfig  CallConfig
 	providerMap map[string]Provider
 }
@@ -69,6 +82,7 @@ var knownProviders = map[string]providerRetriver{
 	"openrouter": func(key string) Provider { return &OpenAIProvider{Key: key} },
 	"voyage":     func(key string) Provider { return &VoyageProvider{Key: key} },
 	"xai":        func(key string) Provider { return &XAIProvider{Key: key} },
+	"typesafe":   func(key string) Provider { return &TypeSafeProvider{Key: key} },
 }
 
 func NewCommonClient(keys map[string]string, opts ...CallOption) (Client, error) {
@@ -96,8 +110,8 @@ func NewCommonClient(keys map[string]string, opts ...CallOption) (Client, error)
 	return client, nil
 }
 
-// prepareCall resolves provider, model, and configuration for a call
-func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, error) {
+// resolveCall merges options and resolves provider name, provider and configuration
+func (c *CommonClient) resolveCall(opts ...CallOption) (string, Provider, CallConfig, error) {
 	// Merge configs
 	cfg := c.baseConfig
 	for _, opt := range opts {
@@ -107,7 +121,7 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, er
 	// Resolve provider and model
 	providerName, resolvedModel, endpoint, err := c.resolveProviderAndModel(cfg.Model)
 	if err != nil {
-		return nil, cfg, err
+		return "", nil, cfg, err
 	}
 
 	// Update config with resolved model
@@ -117,7 +131,7 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, er
 	// Get provider
 	p, ok := c.providerMap[providerName]
 	if !ok {
-		return nil, cfg, fmt.Errorf("unknown provider: %s", providerName)
+		return providerName, nil, cfg, fmt.Errorf("unknown provider: %s", providerName)
 	}
 
 	// Special handling for openrouter
@@ -127,138 +141,98 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, er
 		}
 	}
 
-	return p, cfg, nil
+	return providerName, p, cfg, nil
 }
 
-// prepareCall resolves provider, model, and configuration for a call
-func (c *CommonClient) getProvider(opts ...CallOption) (Provider, error) {
-	// Merge configs
-	cfg := c.baseConfig
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-
-	// Resolve provider and model
-	providerName, _, _, err := c.resolveProviderAndModel(cfg.Model)
+// prepareCapability resolves the call and returns the provider as capability T
+func prepareCapability[T any](c *CommonClient, feature string, opts []CallOption) (T, string, CallConfig, error) {
+	name, p, cfg, err := c.resolveCall(opts...)
 	if err != nil {
-		return nil, err
+		var zero T
+		return zero, name, cfg, err
 	}
-
-	// Get provider
-	p, ok := c.providerMap[providerName]
-	if !ok {
-		return nil, fmt.Errorf("unknown provider: %s", providerName)
-	}
-
-	return p, nil
+	t, err := capability[T](p, name, feature)
+	return t, name, cfg, err
 }
 
-// Call implements the Client interface
+// finishUsage stamps the resolved model on u and fills its cost when a pricer is configured
+func finishUsage(u *Usage, providerName string, cfg CallConfig) {
+	if u == nil {
+		return
+	}
+	if u.Model == "" {
+		u.Model = providerName + "/" + cfg.Model
+	}
+	if cfg.Pricer != nil && u.CostUSD == nil {
+		if usd, ok := cfg.Pricer.USD(*u); ok {
+			u.CostUSD = &usd
+		}
+	}
+}
+
+// Complete implements the Client interface
 func (c *CommonClient) Complete(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	name, p, cfg, err := c.resolveCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.call(ctx, messages, cfg)
+	resp, err := p.call(ctx, messages, cfg)
+	if err != nil {
+		return nil, err
+	}
+	finishUsage(resp.Usage, name, cfg)
+	return resp, nil
 }
 
-// StreamCall implements the Client interface
+// StreamComplete implements the Client interface
 func (c *CommonClient) StreamComplete(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	name, p, cfg, err := c.resolveCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.streamCall(ctx, messages, cfg)
+	resp, err := p.streamCall(ctx, messages, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// forward chunks, completing the usage chunk on the way
+	out := make(chan StreamChunk)
+	go func(in <-chan StreamChunk) {
+		defer close(out)
+		for chunk := range in {
+			finishUsage(chunk.Usage, name, cfg)
+			out <- chunk
+		}
+	}(resp.Stream)
+	return &StreamResponse{Stream: out}, nil
 }
 
 // GetEmbeddings implements the Client interface
 func (c *CommonClient) GetEmbeddings(ctx context.Context, texts []string, opts ...CallOption) (*EmbeddingResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	e, name, cfg, err := prepareCapability[embedder](c, "embeddings", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.getEmbeddings(ctx, texts, cfg)
+	resp, err := e.getEmbeddings(ctx, texts, cfg)
+	if err != nil {
+		return nil, err
+	}
+	finishUsage(resp.Usage, name, cfg)
+	return resp, nil
 }
 
 // ReRank implements the Client interface
 func (c *CommonClient) ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	r, name, cfg, err := prepareCapability[reranker](c, "rerank", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.reRank(ctx, query, documents, cfg)
-}
-
-func (c *CommonClient) ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error) {
-	p, err := c.getProvider(opts...)
+	resp, err := r.reRank(ctx, query, documents, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return p.parseCompletionRequest(req)
-}
-
-func (c *CommonClient) ExecComplete(ctx context.Context, CompletionRequest *CompletionRequest, opts ...CallOption) (*CompletionResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return p.buildCompletionRequest(ctx, CompletionRequest, cfg)
-}
-
-func (c *CommonClient) WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error {
-	p, err := c.getProvider(opts...)
-	if err != nil {
-		return err
-	}
-	return p.writeCompletionResponse(w, resp)
-}
-
-func (c *CommonClient) ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error) {
-	p, err := c.getProvider(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return p.parseEmbeddingRequest(req)
-}
-
-func (c *CommonClient) ExecEmbedding(ctx context.Context, EmbeddingRequest *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return p.buildEmbeddingRequest(ctx, EmbeddingRequest, cfg)
-}
-
-func (c *CommonClient) WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error {
-	p, err := c.getProvider(opts...)
-	if err != nil {
-		return err
-	}
-	return p.writeEmbeddingResponse(w, resp)
-}
-
-func (c *CommonClient) ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error) {
-	p, err := c.getProvider(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return p.parseRerankRequest(req)
-}
-
-func (c *CommonClient) ExecRerank(ctx context.Context, RerankRequest *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return p.buildRerankRequest(ctx, RerankRequest, cfg)
-}
-
-func (c *CommonClient) WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error {
-	p, err := c.getProvider(opts...)
-	if err != nil {
-		return err
-	}
-	return p.writeRerankResponse(w, resp)
+	finishUsage(resp.Usage, name, cfg)
+	return resp, nil
 }
 
 // resolveProviderAndModel determines the provider and resolves model aliases
@@ -308,27 +282,31 @@ func parseModelString(fullModelName string) (string, string, string, error) {
 
 // Model aliases for each provider
 var alises = map[string]string{
-	"openai/best":     "openai/gpt-5.2",
-	"openai/balanced": "openai/gpt-5-mini",
-	"openai/light":    "openai/gpt-5-nano",
+	"openai/best":     "openai/gpt-6-astra",
+	"openai/balanced": "openai/gpt-6.1-sol",
+	"openai/light":    "openai/gpt-6-luna",
 
-	"anthropic/best":     "anthropic/claude-sonnet-4-5",
-	"anthropic/balanced": "anthropic/claude-opus-4-5",
-	"anthropic/light":    "anthropic/claude-haiku-4-5",
+	"anthropic/best":     "anthropic/claude-fable-5-1",
+	"anthropic/balanced": "anthropic/claude-sonnet-5-5",
+	"anthropic/light":    "anthropic/claude-haiku-5-5",
 
-	"google/best":     "google/gemini-2.5-pro",
-	"google/balanced": "google/gemini-2.5-flash",
-	"google/light":    "google/gemini-2.5-flash",
+	"google/best":     "google/gemini-4-argon",
+	"google/balanced": "google/gemini-3.8-flash",
+	"google/light":    "google/gemini-3.5-flash-lite",
 
-	"openrouter/best":     "openrouter/openai/gpt-5",
-	"openrouter/balanced": "openrouter/openai/gpt-5-mini",
-	"openrouter/light":    "openrouter/openai/gpt-5-nano",
+	"openrouter/best":     "openrouter/openai/gpt-6-astra",
+	"openrouter/balanced": "openrouter/openai/gpt-6.1-sol",
+	"openrouter/light":    "openrouter/openai/gpt-6-luna",
 
 	"voyage/best":     "voyage/voyage-4-large",
 	"voyage/balanced": "voyage/voyage-4",
 	"voyage/light":    "voyage/voyage-4-lite",
 
-	"xai/best":     "xai/grok-4-0709",
-	"xai/balanced": "xai/grok-4-1-fast-reasoning",
-	"xai/light":    "xai/grok-4-1-fast-non-reasoning",
+	"xai/best":     "xai/grok-4.7",
+	"xai/balanced": "xai/grok-4.3",
+	"xai/light":    "xai/grok-4.20-0309-non-reasoning",
+
+	"typesafe/best":     "typesafe/jev-latest",
+	"typesafe/balanced": "typesafe/jev-latest",
+	"typesafe/light":    "typesafe/jev-latest",
 }

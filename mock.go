@@ -2,9 +2,8 @@ package echo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -114,106 +113,80 @@ func (p *MockProvider) streamCall(ctx context.Context, messages []Message, cfg C
 	}, nil
 }
 
-// getEmbeddings implements the provider interface for mock embeddings
-func (p *MockProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
+// decide implements the decider interface with deterministic answers:
+// choice picks the first option, score picks the lowest level, noul returns 0.5.
+func (p *MockProvider) decide(ctx context.Context, req decisionRequest, cfg CallConfig) (*DecisionResponse, error) {
+	one := 1.0
+	answers := make(map[string]Answer, len(req.Questions))
 
-// reRank implements the provider interface for mock reranking
-func (p *MockProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// parseCompletionRequest parses an HTTP request into a CompletionRequest
-func (p *MockProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	var completionReq CompletionRequest
-	if err := json.NewDecoder(req.Body).Decode(&completionReq); err != nil {
-		return nil, fmt.Errorf("failed to parse mock completion request: %w", err)
-	}
-	return &completionReq, nil
-}
-
-// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-func (p *MockProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-func (p *MockProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// buildCompletionRequest builds and executes a completion request, returning a unified response
-func (p *MockProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
-	// Create mock response with combined message content
-	var combinedContent strings.Builder
-	for i, msg := range req.Messages {
-		if i > 0 {
-			combinedContent.WriteString("\n")
+	for id, q := range req.Questions {
+		a := Answer{Type: q.Type}
+		switch q.Type {
+		case QuestionChoice:
+			names := mockOptionNames(q.Criteria)
+			if len(names) == 0 {
+				return nil, fmt.Errorf("question %q: no options", id)
+			}
+			a.Choice = names[0]
+			a.Confidence = &one
+			a.Probabilities = map[string]float64{}
+			for i, n := range names {
+				if i == 0 {
+					a.Probabilities[n] = 1
+				} else {
+					a.Probabilities[n] = 0
+				}
+			}
+		case QuestionScore:
+			levels, _ := q.Criteria.([]string)
+			a.Score = 0
+			a.Confidence = &one
+			a.Legend = map[string]string{}
+			a.Probabilities = map[string]float64{}
+			for i, l := range levels {
+				key := fmt.Sprint(i)
+				a.Legend[key] = l
+				if i == 0 {
+					a.Probabilities[key] = 1
+				} else {
+					a.Probabilities[key] = 0
+				}
+			}
+		case QuestionNoul:
+			a.Noul = 0.5
 		}
-		combinedContent.WriteString(fmt.Sprintf("[%s]: %s", msg.Role, msg.Content))
+		answers[id] = a
 	}
 
-	// Create unified completion response
-	completionResp := &CompletionResponse{
-		ID:      "mock-completion-id",
-		Object:  "chat.completion",
-		Created: 0,
+	return &DecisionResponse{
 		Model:   req.Model,
-		Choices: make([]struct {
-			Index   int `json:"index"`
-			Message struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason,omitempty"`
-		}, 1),
+		Answers: answers,
+		Metadata: Metadata{
+			"mock":           true,
+			"question_count": len(req.Questions),
+		},
+	}, nil
+}
+
+func mockOptionNames(criteria any) []string {
+	switch c := criteria.(type) {
+	case choiceCriteria:
+		names := make([]string, len(c))
+		for i, o := range c {
+			names[i] = o.Name
+		}
+		return names
+	case []Option:
+		return mockOptionNames(choiceCriteria(c))
+	case []string:
+		return c
+	case map[string]string:
+		names := make([]string, 0, len(c))
+		for n := range c {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return names
 	}
-
-	completionResp.Choices[0].Index = 0
-	completionResp.Choices[0].Message.Role = "assistant"
-	completionResp.Choices[0].Message.Content = combinedContent.String()
-	completionResp.Choices[0].FinishReason = "stop"
-
-	// Add mock usage
-	completionResp.Usage = &struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	}{
-		PromptTokens:     len(req.Messages) * 10,
-		CompletionTokens: 20,
-		TotalTokens:      len(req.Messages)*10 + 20,
-	}
-
-	return completionResp, nil
-}
-
-// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-func (p *MockProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-func (p *MockProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
-func (p *MockProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	w.Header().Set("Content-Type", "plain/text")
-	_, err := w.Write([]byte(resp.Choices[0].Message.Content))
-	return err
-}
-
-// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-func (p *MockProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-func (p *MockProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
+	return nil
 }

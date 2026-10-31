@@ -3,9 +3,7 @@ package echo
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -176,88 +174,6 @@ func (p *CLIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 	return &StreamResponse{Stream: ch}, nil
 }
 
-// getEmbeddings is not supported by CLI providers.
-func (p *CLIProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-// reRank is not supported by CLI providers.
-func (p *CLIProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("rerank is not supported by cli providers")
-}
-
-// parseCompletionRequest accepts OpenAI-format completion payloads so that a
-// CLI provider can sit behind the proxy helpers just like the HTTP providers.
-func (p *CLIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	var r CompletionRequest
-	if err := json.NewDecoder(req.Body).Decode(&r); err != nil {
-		return nil, fmt.Errorf("failed to parse cli completion request: %w", err)
-	}
-	return &r, nil
-}
-
-func (p *CLIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-func (p *CLIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("rerank is not supported by cli providers")
-}
-
-func (p *CLIProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
-	msgs := make([]Message, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		role := m.Role
-		if role == "assistant" {
-			role = Agent
-		}
-		msgs = append(msgs, Message{Role: role, Content: m.Content})
-	}
-
-	resp, err := p.call(ctx, msgs, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	out := &CompletionResponse{
-		Object: "chat.completion",
-		Model:  cfg.Model,
-		Choices: make([]struct {
-			Index   int `json:"index"`
-			Message struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason,omitempty"`
-		}, 1),
-	}
-	out.Choices[0].Message.Role = "assistant"
-	out.Choices[0].Message.Content = resp.Text
-	out.Choices[0].FinishReason = "stop"
-	return out, nil
-}
-
-func (p *CLIProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-func (p *CLIProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("rerank is not supported by cli providers")
-}
-
-func (p *CLIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
-}
-
-func (p *CLIProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	return fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-func (p *CLIProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("rerank is not supported by cli providers")
-}
-
 // NewClaudeCLIProvider returns a provider wired for the Claude Code CLI.
 // Override the binary path via the ECHO_CLAUDE_CLI_PATH environment variable.
 func NewClaudeCLIProvider() *CLIProvider {
@@ -332,9 +248,9 @@ func EnableLocalLlama(client Client) {
 // referenced through the standard "provider/model" syntax:
 //
 //	claude-cli/<model>     e.g. claude-cli/opus
-//	codex-cli/<model>      e.g. codex-cli/gpt-5
+//	codex-cli/<model>      e.g. codex-cli/gpt-6.1-sol
 //	gemini-cli/<model>     e.g. gemini-cli/pro
-//	opencode-cli/<model>   e.g. opencode-cli/anthropic/claude-sonnet-4
+//	opencode-cli/<model>   e.g. opencode-cli/anthropic/claude-sonnet-5-5
 //
 // Binary paths can be overridden via the environment variables
 // ECHO_CLAUDE_CLI_PATH, ECHO_CODEX_CLI_PATH, ECHO_GEMINI_CLI_PATH, and
