@@ -270,6 +270,7 @@ if u := resp.Usage; u != nil {
 
 | Field | Meaning |
 |-------|---------|
+| `Model` | Resolved `provider/model` used for the call (aliases expanded) |
 | `InputTokens` | All input tokens, including cached ones |
 | `CachedInputTokens` | Input tokens read from cache (subset of `InputTokens`) |
 | `CacheWriteTokens` | Input tokens written to cache, e.g. Anthropic cache creation (subset of `InputTokens`) |
@@ -278,8 +279,8 @@ if u := resp.Usage; u != nil {
 | `TotalTokens` | Total tokens |
 | `CostUSD` | Charged amount, only when the provider reports it (OpenRouter); otherwise `nil` |
 
-The library does not compute prices. Multiply the token counts by your own price table, and use
-`Usage.Add` to accumulate totals across calls. The same struct is available on
+The core package does not compute prices; see [Cost Calculation](#cost-calculation) for the
+optional `pricing` package. Use `Usage.Add` to accumulate token totals across calls. The same struct is available on
 `EmbeddingResponse`, `RerankResponse` and `DecisionResponse`. When streaming, usage arrives on a
 dedicated chunk near the end of the stream:
 
@@ -290,6 +291,62 @@ for chunk := range stream.Stream {
     }
 }
 ```
+
+## Cost Calculation
+
+The optional `github.com/mkozhukh/echo/pricing` package turns `Usage` into USD. It ships with a
+built-in price table: a [models.dev](https://models.dev) snapshot for OpenAI, Anthropic, Google, xAI
+and OpenRouter, plus [Voyage AI](https://docs.voyageai.com/docs/pricing) and TypeSafe Jev prices.
+Prices are USD per 1M tokens and take cached input, cache writes, separately priced reasoning and
+context tiers (e.g. Gemini over 200k tokens) into account. Free tiers, batch discounts and
+account-specific rates are not.
+
+```go
+import "github.com/mkozhukh/echo/pricing"
+
+resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"))
+if cost, ok := pricing.Default().Cost(resp.Usage); ok {
+    fmt.Printf("$%.6f (input $%.6f, output $%.6f)\n", cost.Total, cost.Input, cost.Output)
+}
+```
+
+`ok` is false when no price is known for the model (local llama.cpp / CLI providers, fine-tunes,
+models missing from the table). A cost reported by the provider itself (OpenRouter) is used as is.
+
+### Cost in every response
+
+Pass a price table to the client and `Usage.CostUSD` is filled on every response, including the
+usage chunk of streams, so results can be served or logged with their cost attached:
+
+```go
+client, _ := echo.NewCommonClient(nil,
+    echo.WithModel("anthropic/balanced"),
+    echo.WithPricer(pricing.Default()),
+)
+
+resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"))
+json.NewEncoder(w).Encode(resp) // {"text": "...", "usage": {"model": "...", ..., "cost_usd": 0.0012}}
+```
+
+`WithPricer` accepts any `echo.Pricer`, so you can plug in your own price source. To enrich a
+`Usage` manually, use `prices.Enrich(&usage)`.
+
+### Fresh or custom prices
+
+```go
+prices, err := pricing.Fetch(ctx) // latest models.dev data; on error returns the built-in table and err
+if err != nil {
+    log.Println("using built-in prices:", err)
+}
+
+prices.Save(file)                    // cache it...
+prices, err = pricing.Load(file)     // ...and load it on the next start
+
+prices.Set("openai/my-finetune", pricing.Price{Rates: pricing.Rates{Input: 3, Output: 12}})
+```
+
+`pricing.Default()` is shared by the whole process; call `Clone()` before `Set` if you need an
+isolated table. The built-in snapshot is refreshed with `go generate ./pricing`.
 
 ## Streaming Responses
 

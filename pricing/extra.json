@@ -1,0 +1,238 @@
+{
+ "typesafe": {
+  "models": {
+   "jev": {
+    "cost": {
+     "input": 0.04,
+     "output": 0
+    }
+   },
+   "jev-1.13.0": {
+    "cost": {
+     "input": 0.04,
+     "output": 0
+    }
+   },
+   "jev-1.14.0": {
+    "cost": {
+     "input": 0.04,
+     "output": 0
+    }
+   },
+   "jev-latest": {
+    "cost": {
+     "input": 0.04,
+     "output": 0
+    }
+   }
+  }
+ },
+ "voyage": {
+  "models": {
+   "rerank-1": {
+    "cost": {
+     "input": 0.05,
+     "output": 0
+    }
+   },
+   "rerank-2": {
+    "cost": {
+     "input": 0.05,
+     "output": 0
+    }
+   },
+   "rerank-2-lite": {
+    "cost": {
+     "input": 0.02,
+     "output": 0
+    }
+   },
+   "rerank-2.5": {
+    "cost": {
+     "input": 0.05,
+     "output": 0
+    }
+   },
+   "rerank-2.5-lite": {
+    "cost": {
+     "input": 0.02,
+     "output": 0
+    }
+   },
+   "rerank-3": {
+    "cost": {
+     "input": 0.05,
+     "output": 0
+    }
+   },
+   "rerank-3-lite": {
+    "cost": {
+     "input": 0.02,
+     "output": 0
+    }
+   },
+   "rerank-lite-1": {
+    "cost": {
+     "input": 0.02,
+     "output": 0
+    }
+   },
+   "voyage-01": {
+    "cost": {
+     "input": 0.1,
+     "output": 0
+    }
+   },
+   "voyage-02": {
+    "cost": {
+     "input": 0.1,
+     "output": 0
+    }
+   },
+   "voyage-2": {
+    "cost": {
+     "input": 0.1,
+     "output": 0
+    }
+   },
+   "voyage-3": {
+    "cost": {
+     "input": 0.06,
+     "output": 0
+    }
+   },
+   "voyage-3-large": {
+    "cost": {
+     "input": 0.18,
+     "output": 0
+    }
+   },
+   "voyage-3-lite": {
+    "cost": {
+     "input": 0.02,
+     "output": 0
+    }
+   },
+   "voyage-3.5": {
+    "cost": {
+     "input": 0.06,
+     "output": 0
+    }
+   },
+   "voyage-3.5-lite": {
+    "cost": {
+     "input": 0.02,
+     "output": 0
+    }
+   },
+   "voyage-4": {
+    "cost": {
+     "input": 0.06,
+     "output": 0
+    }
+   },
+   "voyage-4-large": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-4-lite": {
+    "cost": {
+     "input": 0.02,
+     "output": 0
+    }
+   },
+   "voyage-code-2": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-code-3": {
+    "cost": {
+     "input": 0.18,
+     "output": 0
+    }
+   },
+   "voyage-code-4": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-context-3": {
+    "cost": {
+     "input": 0.18,
+     "output": 0
+    }
+   },
+   "voyage-context-4": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-finance-2": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-large-2": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-large-2-instruct": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-law-2": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-lite-01": {
+    "cost": {
+     "input": 0.1,
+     "output": 0
+    }
+   },
+   "voyage-lite-01-instruct": {
+    "cost": {
+     "input": 0.1,
+     "output": 0
+    }
+   },
+   "voyage-lite-02-instruct": {
+    "cost": {
+     "input": 0.1,
+     "output": 0
+    }
+   },
+   "voyage-multilingual-2": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-multimodal-3": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   },
+   "voyage-multimodal-3.5": {
+    "cost": {
+     "input": 0.12,
+     "output": 0
+    }
+   }
+  }
+ }
+}
