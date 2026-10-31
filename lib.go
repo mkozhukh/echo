@@ -27,6 +27,7 @@ type Metadata = map[string]any
 // Prices are not computed by the library; CostUSD is set only when the
 // provider reports the charged amount directly (e.g. OpenRouter).
 type Usage struct {
+	Model             string   `json:"model,omitempty"`               // resolved "provider/model" used for the call
 	InputTokens       int      `json:"input_tokens"`                  // all input tokens, including cached ones
 	CachedInputTokens int      `json:"cached_input_tokens,omitempty"` // input tokens read from cache (subset of InputTokens)
 	CacheWriteTokens  int      `json:"cache_write_tokens,omitempty"`  // input tokens written to cache (subset of InputTokens)
@@ -37,9 +38,16 @@ type Usage struct {
 }
 
 // Add accumulates other into u. Safe to call with a nil other.
+// Model is kept only while all accumulated usages share the same model;
+// price each call separately when mixing models.
 func (u *Usage) Add(other *Usage) {
 	if other == nil {
 		return
+	}
+	if u.isEmpty() {
+		u.Model = other.Model
+	} else if u.Model != other.Model {
+		u.Model = ""
 	}
 	u.InputTokens += other.InputTokens
 	u.CachedInputTokens += other.CachedInputTokens
@@ -54,6 +62,17 @@ func (u *Usage) Add(other *Usage) {
 		}
 		u.CostUSD = &cost
 	}
+}
+
+func (u *Usage) isEmpty() bool {
+	return u.Model == "" && u.InputTokens == 0 && u.OutputTokens == 0 && u.TotalTokens == 0 && u.CostUSD == nil
+}
+
+// Pricer computes the cost of a call from its usage.
+// It is implemented by pricing.Prices; see WithPricer.
+type Pricer interface {
+	// USD returns the cost in USD and whether a price is known for u.Model
+	USD(u Usage) (float64, bool)
 }
 
 // Response represents the LLM response
@@ -109,6 +128,7 @@ type CallConfig struct {
 	StructuredOutput *StructuredOutputConfig
 	ReasoningEffort  string // "low", "medium", "high" - controls thinking/reasoning level
 	StoreData        *bool  // xAI: set to false to disable server-side storage (default: false)
+	Pricer           Pricer // fills Usage.CostUSD when the provider does not report it
 }
 
 func WithTemperature(temp float32) CallOption {
@@ -176,5 +196,14 @@ func WithReasoningEffort(effort string) CallOption {
 func WithStoreData(store bool) CallOption {
 	return func(cfg *CallConfig) {
 		cfg.StoreData = &store
+	}
+}
+
+// WithPricer makes the client fill Usage.CostUSD of every response (including
+// the usage chunk of streams) using the given pricer, e.g. pricing.Default().
+// A cost reported by the provider itself (OpenRouter) is kept as is.
+func WithPricer(p Pricer) CallOption {
+	return func(cfg *CallConfig) {
+		cfg.Pricer = p
 	}
 }

@@ -110,12 +110,6 @@ func NewCommonClient(keys map[string]string, opts ...CallOption) (Client, error)
 	return client, nil
 }
 
-// prepareCall resolves provider, model, and configuration for a call
-func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, error) {
-	_, p, cfg, err := c.resolveCall(opts...)
-	return p, cfg, err
-}
-
 // resolveCall merges options and resolves provider name, provider and configuration
 func (c *CommonClient) resolveCall(opts ...CallOption) (string, Provider, CallConfig, error) {
 	// Merge configs
@@ -151,50 +145,94 @@ func (c *CommonClient) resolveCall(opts ...CallOption) (string, Provider, CallCo
 }
 
 // prepareCapability resolves the call and returns the provider as capability T
-func prepareCapability[T any](c *CommonClient, feature string, opts []CallOption) (T, CallConfig, error) {
+func prepareCapability[T any](c *CommonClient, feature string, opts []CallOption) (T, string, CallConfig, error) {
 	name, p, cfg, err := c.resolveCall(opts...)
 	if err != nil {
 		var zero T
-		return zero, cfg, err
+		return zero, name, cfg, err
 	}
 	t, err := capability[T](p, name, feature)
-	return t, cfg, err
+	return t, name, cfg, err
+}
+
+// finishUsage stamps the resolved model on u and fills its cost when a pricer is configured
+func finishUsage(u *Usage, providerName string, cfg CallConfig) {
+	if u == nil {
+		return
+	}
+	if u.Model == "" {
+		u.Model = providerName + "/" + cfg.Model
+	}
+	if cfg.Pricer != nil && u.CostUSD == nil {
+		if usd, ok := cfg.Pricer.USD(*u); ok {
+			u.CostUSD = &usd
+		}
+	}
 }
 
 // Complete implements the Client interface
 func (c *CommonClient) Complete(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	name, p, cfg, err := c.resolveCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.call(ctx, messages, cfg)
+	resp, err := p.call(ctx, messages, cfg)
+	if err != nil {
+		return nil, err
+	}
+	finishUsage(resp.Usage, name, cfg)
+	return resp, nil
 }
 
 // StreamComplete implements the Client interface
 func (c *CommonClient) StreamComplete(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	name, p, cfg, err := c.resolveCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.streamCall(ctx, messages, cfg)
+	resp, err := p.streamCall(ctx, messages, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// forward chunks, completing the usage chunk on the way
+	out := make(chan StreamChunk)
+	go func(in <-chan StreamChunk) {
+		defer close(out)
+		for chunk := range in {
+			finishUsage(chunk.Usage, name, cfg)
+			out <- chunk
+		}
+	}(resp.Stream)
+	return &StreamResponse{Stream: out}, nil
 }
 
 // GetEmbeddings implements the Client interface
 func (c *CommonClient) GetEmbeddings(ctx context.Context, texts []string, opts ...CallOption) (*EmbeddingResponse, error) {
-	e, cfg, err := prepareCapability[embedder](c, "embeddings", opts)
+	e, name, cfg, err := prepareCapability[embedder](c, "embeddings", opts)
 	if err != nil {
 		return nil, err
 	}
-	return e.getEmbeddings(ctx, texts, cfg)
+	resp, err := e.getEmbeddings(ctx, texts, cfg)
+	if err != nil {
+		return nil, err
+	}
+	finishUsage(resp.Usage, name, cfg)
+	return resp, nil
 }
 
 // ReRank implements the Client interface
 func (c *CommonClient) ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error) {
-	r, cfg, err := prepareCapability[reranker](c, "rerank", opts)
+	r, name, cfg, err := prepareCapability[reranker](c, "rerank", opts)
 	if err != nil {
 		return nil, err
 	}
-	return r.reRank(ctx, query, documents, cfg)
+	resp, err := r.reRank(ctx, query, documents, cfg)
+	if err != nil {
+		return nil, err
+	}
+	finishUsage(resp.Usage, name, cfg)
+	return resp, nil
 }
 
 // resolveProviderAndModel determines the provider and resolves model aliases

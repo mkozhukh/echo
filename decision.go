@@ -159,10 +159,15 @@ func (c *CommonClient) Decide(ctx context.Context, state any, questions Question
 		return nil, err
 	}
 
-	d, cfg, err := prepareCapability[decider](c, "decisions", opts)
+	d, name, cfg, err := prepareCapability[decider](c, "decisions", opts)
 	if err != nil {
 		return nil, err
 	}
 
-	return d.decide(ctx, decisionRequest{State: state, Model: cfg.Model, Questions: questions}, cfg)
+	resp, err := d.decide(ctx, decisionRequest{State: state, Model: cfg.Model, Questions: questions}, cfg)
+	if err != nil {
+		return nil, err
+	}
+	finishUsage(resp.Usage, name, cfg)
+	return resp, nil
 }

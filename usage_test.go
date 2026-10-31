@@ -50,12 +50,63 @@ func checkUsage(t *testing.T, got *Usage, want Usage) {
 
 func TestUsageAdd(t *testing.T) {
 	c := 0.5
-	u := Usage{InputTokens: 1, TotalTokens: 1}
+	var u Usage
 	u.Add(nil)
-	u.Add(&Usage{InputTokens: 2, OutputTokens: 3, TotalTokens: 5, CostUSD: &c})
-	u.Add(&Usage{CostUSD: &c})
+	u.Add(&Usage{Model: "openai/gpt-5", InputTokens: 1, TotalTokens: 1})
+	u.Add(&Usage{Model: "openai/gpt-5", InputTokens: 2, OutputTokens: 3, TotalTokens: 5, CostUSD: &c})
+	if u.Model != "openai/gpt-5" {
+		t.Errorf("model = %q", u.Model)
+	}
+	u.Add(&Usage{Model: "anthropic/claude-haiku-4-5", CostUSD: &c})
 	if u.InputTokens != 3 || u.OutputTokens != 3 || u.TotalTokens != 6 || u.CostUSD == nil || *u.CostUSD != 1 {
 		t.Errorf("Add = %+v", u)
+	}
+	if u.Model != "" {
+		t.Errorf("mixed models should clear Model, got %q", u.Model)
+	}
+}
+
+type fixedPricer float64
+
+func (f fixedPricer) USD(u Usage) (float64, bool) {
+	if u.Model == "unknown/x" {
+		return 0, false
+	}
+	return float64(f) * float64(u.TotalTokens), true
+}
+
+func TestWithPricer(t *testing.T) {
+	ctx := context.Background()
+	body := `{"choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`
+	srv := serve(t, "application/json", body)
+	resp, err := NewOpenAIClient("k", "gpt-5", WithBaseURL(srv.URL), WithPricer(fixedPricer(0.1))).Complete(ctx, QuickMessage("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Usage.CostUSD == nil || *resp.Usage.CostUSD != 0.5 {
+		t.Errorf("cost = %v", resp.Usage.CostUSD)
+	}
+
+	// provider-reported cost wins over the pricer
+	srv = serve(t, "application/json", `{"choices":[{"message":{"content":"hi"}}],`+openAIUsageJSON+`}`)
+	resp, err = NewOpenAIClient("k", "gpt-5", WithBaseURL(srv.URL)).Complete(ctx, QuickMessage("x"), WithPricer(fixedPricer(1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *resp.Usage.CostUSD != 0.0123 {
+		t.Errorf("reported cost overwritten: %v", *resp.Usage.CostUSD)
+	}
+
+	// streaming usage chunk is enriched too
+	srv = serve(t, "text/event-stream", "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"+
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}\n\ndata: [DONE]\n\n")
+	sresp, err := NewOpenAIClient("k", "gpt-5", WithBaseURL(srv.URL), WithPricer(fixedPricer(0.1))).StreamComplete(ctx, QuickMessage("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, usage := streamUsage(t, sresp)
+	if usage == nil || usage.CostUSD == nil || *usage.CostUSD != 0.5 || usage.Model != "openai/gpt-5" {
+		t.Errorf("stream usage = %+v", usage)
 	}
 }
 
@@ -64,7 +115,7 @@ const openAIUsageJSON = `"usage":{"prompt_tokens":100,"completion_tokens":40,"to
 	`"prompt_tokens_details":{"cached_tokens":60,"cache_write_tokens":10},` +
 	`"completion_tokens_details":{"reasoning_tokens":25},"cost":0.0123}`
 
-var openAIWant = Usage{InputTokens: 100, CachedInputTokens: 60, CacheWriteTokens: 10, OutputTokens: 40, ReasoningTokens: 25, TotalTokens: 140}
+var openAIWant = Usage{Model: "openai/gpt-5", InputTokens: 100, CachedInputTokens: 60, CacheWriteTokens: 10, OutputTokens: 40, ReasoningTokens: 25, TotalTokens: 140}
 
 func TestOpenAIUsage(t *testing.T) {
 	ctx := context.Background()
@@ -101,7 +152,7 @@ func TestOpenAIUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkUsage(t, eresp.Usage, Usage{InputTokens: 7, TotalTokens: 7})
+	checkUsage(t, eresp.Usage, Usage{Model: "openai/text-embedding-3-small", InputTokens: 7, TotalTokens: 7})
 	if eresp.Usage.CostUSD != nil {
 		t.Errorf("unexpected cost")
 	}
@@ -113,7 +164,9 @@ func TestXAIUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkUsage(t, resp.Usage, openAIWant)
+	want := openAIWant
+	want.Model = "xai/grok-4"
+	checkUsage(t, resp.Usage, want)
 }
 
 func TestAnthropicUsage(t *testing.T) {
@@ -124,7 +177,7 @@ func TestAnthropicUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Usage{InputTokens: 80, CachedInputTokens: 40, CacheWriteTokens: 30, OutputTokens: 20, TotalTokens: 100}
+	want := Usage{Model: "anthropic/claude-haiku-4-5", InputTokens: 80, CachedInputTokens: 40, CacheWriteTokens: 30, OutputTokens: 20, TotalTokens: 100}
 	checkUsage(t, resp.Usage, want)
 	if resp.Metadata["stop_reason"] != "end_turn" || len(resp.Metadata) != 1 {
 		t.Errorf("metadata = %v", resp.Metadata)
@@ -149,7 +202,7 @@ func TestAnthropicUsage(t *testing.T) {
 func TestGoogleUsage(t *testing.T) {
 	ctx := context.Background()
 	usageJSON := `"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":20,"thoughtsTokenCount":30,"cachedContentTokenCount":50,"totalTokenCount":150}`
-	want := Usage{InputTokens: 100, CachedInputTokens: 50, OutputTokens: 50, ReasoningTokens: 30, TotalTokens: 150}
+	want := Usage{Model: "google/gemini-2.5-flash", InputTokens: 100, CachedInputTokens: 50, OutputTokens: 50, ReasoningTokens: 30, TotalTokens: 150}
 
 	srv := serve(t, "application/json", `{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],`+usageJSON+`}`)
 	resp, err := NewGoogleClient("k", "gemini-2.5-flash", WithBaseURL(srv.URL+"/m:generateContent")).Complete(ctx, QuickMessage("x"))
@@ -180,12 +233,12 @@ func TestVoyageUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkUsage(t, eresp.Usage, Usage{InputTokens: 9, TotalTokens: 9})
+	checkUsage(t, eresp.Usage, Usage{Model: "voyage/voyage-4", InputTokens: 9, TotalTokens: 9})
 
 	srv = serve(t, "application/json", `{"data":[{"index":0,"relevance_score":0.9}],"model":"rerank-2.5","usage":{"total_tokens":11}}`)
 	rresp, err := NewVoyageClient("k", "rerank-2.5", WithBaseURL(srv.URL)).ReRank(ctx, "q", []string{"a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkUsage(t, rresp.Usage, Usage{InputTokens: 11, TotalTokens: 11})
+	checkUsage(t, rresp.Usage, Usage{Model: "voyage/rerank-2.5", InputTokens: 11, TotalTokens: 11})
 }
