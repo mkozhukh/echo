@@ -8,40 +8,40 @@ import (
 	"strings"
 )
 
-type AnthropicMessage struct {
+type anthropicMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type AnthropicRequest struct {
+type anthropicRequest struct {
 	Model        string                 `json:"model"`
-	Messages     []AnthropicMessage     `json:"messages"`
+	Messages     []anthropicMessage     `json:"messages"`
 	MaxTokens    int                    `json:"max_tokens"`
 	Temperature  *float32               `json:"temperature,omitempty"`
 	System       string                 `json:"system,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
-	OutputFormat *AnthropicOutputFormat `json:"output_format,omitempty"`
-	OutputConfig *AnthropicOutputConfig `json:"output_config,omitempty"`
+	OutputFormat *anthropicOutputFormat `json:"output_format,omitempty"`
+	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
 }
 
-// AnthropicOutputFormat specifies the output format for structured output
-type AnthropicOutputFormat struct {
+// anthropicOutputFormat specifies the output format for structured output
+type anthropicOutputFormat struct {
 	Type   string `json:"type"`   // "json_schema"
 	Schema any    `json:"schema"` // JSON Schema
 }
 
-// AnthropicOutputConfig specifies output configuration for reasoning effort
-type AnthropicOutputConfig struct {
+// anthropicOutputConfig specifies output configuration for reasoning effort
+type anthropicOutputConfig struct {
 	Effort string `json:"effort"` // "low", "medium", "high"
 }
 
-type AnthropicError struct {
+type anthropicError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
 }
 
-type AnthropicResponse struct {
-	Error   *AnthropicError `json:"error,omitempty"`
+type anthropicResponse struct {
+	Error   *anthropicError `json:"error,omitempty"`
 	Content []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
@@ -54,11 +54,11 @@ type AnthropicResponse struct {
 }
 
 // Anthropic streaming response structures
-type AnthropicStreamEvent struct {
+type anthropicStreamEvent struct {
 	Type string `json:"type"`
 }
 
-type AnthropicMessageStart struct {
+type anthropicMessageStart struct {
 	Type    string `json:"type"`
 	Message struct {
 		ID           string  `json:"id"`
@@ -75,16 +75,7 @@ type AnthropicMessageStart struct {
 	} `json:"message"`
 }
 
-type AnthropicContentBlockStart struct {
-	Type         string `json:"type"`
-	Index        int    `json:"index"`
-	ContentBlock struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content_block"`
-}
-
-type AnthropicContentBlockDelta struct {
+type anthropicContentBlockDelta struct {
 	Type  string `json:"type"`
 	Index int    `json:"index"`
 	Delta struct {
@@ -93,12 +84,7 @@ type AnthropicContentBlockDelta struct {
 	} `json:"delta"`
 }
 
-type AnthropicContentBlockStop struct {
-	Type  string `json:"type"`
-	Index int    `json:"index"`
-}
-
-type AnthropicMessageDelta struct {
+type anthropicMessageDelta struct {
 	Type  string `json:"type"`
 	Delta struct {
 		StopReason   *string `json:"stop_reason"`
@@ -107,14 +93,6 @@ type AnthropicMessageDelta struct {
 	Usage *struct {
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage,omitempty"`
-}
-
-type AnthropicMessageStop struct {
-	Type string `json:"type"`
-}
-
-type AnthropicPing struct {
-	Type string `json:"type"`
 }
 
 // AnthropicProvider is a stateless provider for Anthropic API
@@ -136,14 +114,14 @@ func NewAnthropicClient(apiKey, model string, opts ...CallOption) Client {
 }
 
 // prepareAnthropicRequest builds the Anthropic request with the given configuration
-func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig) (AnthropicRequest, error) {
+func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig) (anthropicRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return AnthropicRequest{}, fmt.Errorf("invalid message chain: %w", err)
+		return anthropicRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to Anthropic format
-	anthropicMessages := []AnthropicMessage{}
+	anthropicMessages := []anthropicMessage{}
 	var systemMsg string
 
 	for _, msg := range messages {
@@ -151,12 +129,12 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 		case System:
 			systemMsg = msg.Content
 		case User:
-			anthropicMessages = append(anthropicMessages, AnthropicMessage{
+			anthropicMessages = append(anthropicMessages, anthropicMessage{
 				Role:    "user",
 				Content: msg.Content,
 			})
 		case Agent:
-			anthropicMessages = append(anthropicMessages, AnthropicMessage{
+			anthropicMessages = append(anthropicMessages, anthropicMessage{
 				Role:    "assistant",
 				Content: msg.Content,
 			})
@@ -169,7 +147,7 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 		maxTokens = *cfg.MaxTokens
 	}
 
-	body := AnthropicRequest{
+	body := anthropicRequest{
 		Model:       cfg.Model,
 		Messages:    anthropicMessages,
 		MaxTokens:   maxTokens,
@@ -186,7 +164,7 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 
 	// Handle structured output via native output_format API
 	if cfg.StructuredOutput != nil {
-		body.OutputFormat = &AnthropicOutputFormat{
+		body.OutputFormat = &anthropicOutputFormat{
 			Type:   "json_schema",
 			Schema: cfg.StructuredOutput.Schema,
 		}
@@ -194,7 +172,7 @@ func prepareAnthropicRequest(messages []Message, streaming bool, cfg CallConfig)
 
 	// Handle reasoning effort via output_config
 	if cfg.ReasoningEffort != "" {
-		body.OutputConfig = &AnthropicOutputConfig{
+		body.OutputConfig = &anthropicOutputConfig{
 			Effort: cfg.ReasoningEffort,
 		}
 	}
@@ -215,7 +193,7 @@ func (p *AnthropicProvider) call(ctx context.Context, messages []Message, cfg Ca
 		baseURL = "https://api.anthropic.com/v1/messages"
 	}
 
-	resp := AnthropicResponse{}
+	resp := anthropicResponse{}
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("anthropic-version", "2023-06-01")
 		req.Header.Set("x-api-key", p.Key)
@@ -305,7 +283,7 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 
 		var totalInputTokens, totalOutputTokens int
 
-		err := parseSSEStream(respBody, func(msg SSEMessage) error {
+		err := parseSSEStream(respBody, func(msg sseMessage) error {
 			return processAnthropicSSEMessage(msg, ch, &totalInputTokens, &totalOutputTokens)
 		})
 
@@ -318,7 +296,7 @@ func (p *AnthropicProvider) streamCall(ctx context.Context, messages []Message, 
 }
 
 // processAnthropicSSEMessage processes individual Anthropic SSE messages
-func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputTokens, totalOutputTokens *int) error {
+func processAnthropicSSEMessage(msg sseMessage, ch chan StreamChunk, totalInputTokens, totalOutputTokens *int) error {
 	if len(msg.Data) == 0 {
 		return nil
 	}
@@ -326,7 +304,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 	// Handle different event types
 	switch msg.Event {
 	case "message_start":
-		var messageStart AnthropicMessageStart
+		var messageStart anthropicMessageStart
 		if err := json.Unmarshal(msg.Data, &messageStart); err != nil {
 			return fmt.Errorf("json parse error for message_start: %w", err)
 		}
@@ -338,7 +316,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 		// Content block started, no action needed
 
 	case "content_block_delta":
-		var contentDelta AnthropicContentBlockDelta
+		var contentDelta anthropicContentBlockDelta
 		if err := json.Unmarshal(msg.Data, &contentDelta); err != nil {
 			return fmt.Errorf("json parse error for content_block_delta: %w", err)
 		}
@@ -353,7 +331,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 		// Content block finished, no action needed
 
 	case "message_delta":
-		var messageDelta AnthropicMessageDelta
+		var messageDelta anthropicMessageDelta
 		if err := json.Unmarshal(msg.Data, &messageDelta); err != nil {
 			return fmt.Errorf("json parse error for message_delta: %w", err)
 		}
@@ -377,7 +355,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 
 	default:
 		// Try to parse as generic event to handle cases without event type
-		var genericEvent AnthropicStreamEvent
+		var genericEvent anthropicStreamEvent
 		if err := json.Unmarshal(msg.Data, &genericEvent); err != nil {
 			return nil // Skip unparseable events (not an error)
 		}
@@ -385,7 +363,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 		// Handle based on type field in data
 		switch genericEvent.Type {
 		case "content_block_delta":
-			var contentDelta AnthropicContentBlockDelta
+			var contentDelta anthropicContentBlockDelta
 			if err := json.Unmarshal(msg.Data, &contentDelta); err == nil {
 				if contentDelta.Delta.Type == "text_delta" && contentDelta.Delta.Text != "" {
 					ch <- StreamChunk{
@@ -394,7 +372,7 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 				}
 			}
 		case "message_delta":
-			var messageDelta AnthropicMessageDelta
+			var messageDelta anthropicMessageDelta
 			if err := json.Unmarshal(msg.Data, &messageDelta); err == nil {
 				if messageDelta.Usage != nil {
 					*totalOutputTokens = messageDelta.Usage.OutputTokens

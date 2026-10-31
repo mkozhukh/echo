@@ -11,52 +11,52 @@ import (
 	"strings"
 )
 
-type OpenRouterProvider struct {
+type openRouterProvider struct {
 	Order          []string `json:"order"`
 	Only           []string `json:"only"`
 	AllowFallbacks bool     `json:"allow_fallbacks"`
 }
 
-type OpenAIError struct {
+type openAIError struct {
 	Message string `json:"message"`
 	Code    int32  `json:"code"`
 }
 
-type OpenAIRequest struct {
+type openAIRequest struct {
 	Model         string          `json:"model"`
 	Temperature   *float32        `json:"temperature,omitempty"`
 	MaxTokens     *int            `json:"max_completion_tokens,omitempty"`
-	Messages      []OpenAIMessage `json:"messages"`
+	Messages      []openAIMessage `json:"messages"`
 	Stream        bool            `json:"stream,omitempty"`
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
-	Provider        *OpenRouterProvider   `json:"provider,omitempty"`
-	ResponseFormat  *OpenAIResponseFormat `json:"response_format,omitempty"`
+	Provider        *openRouterProvider   `json:"provider,omitempty"`
+	ResponseFormat  *openAIResponseFormat `json:"response_format,omitempty"`
 	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
 }
 
-// OpenAIResponseFormat specifies the format for model output
-type OpenAIResponseFormat struct {
+// openAIResponseFormat specifies the format for model output
+type openAIResponseFormat struct {
 	Type       string                  `json:"type"`
-	JSONSchema *OpenAIJSONSchemaConfig `json:"json_schema,omitempty"`
+	JSONSchema *openAIJSONSchemaConfig `json:"json_schema,omitempty"`
 }
 
-// OpenAIJSONSchemaConfig specifies JSON schema for structured output
-type OpenAIJSONSchemaConfig struct {
+// openAIJSONSchemaConfig specifies JSON schema for structured output
+type openAIJSONSchemaConfig struct {
 	Name   string `json:"name"`
 	Strict bool   `json:"strict,omitempty"`
 	Schema any    `json:"schema"`
 }
 
-// OpenAIMessage represents a message in OpenAI format
-type OpenAIMessage struct {
+// openAIMessage represents a message in OpenAI format
+type openAIMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type OpenAIResponse struct {
-	Error   *OpenAIError `json:"error,omitempty"`
+type openAIResponse struct {
+	Error   *openAIError `json:"error,omitempty"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -108,14 +108,14 @@ func NewOpenAIClient(apiKey, model string, opts ...CallOption) Client {
 }
 
 // prepareOpenAIRequest builds the OpenAI request with the given configuration
-func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (OpenAIRequest, error) {
+func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (openAIRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return OpenAIRequest{}, fmt.Errorf("invalid message chain: %w", err)
+		return openAIRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to OpenAI format
-	openaiMessages := []OpenAIMessage{}
+	openaiMessages := []openAIMessage{}
 	systemMessageProcessed := false
 
 	for _, msg := range messages {
@@ -123,19 +123,19 @@ func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (O
 		case System:
 			// Skip system message here if WithSystemMessage is set
 			if cfg.SystemMsg == "" {
-				openaiMessages = append(openaiMessages, OpenAIMessage{
+				openaiMessages = append(openaiMessages, openAIMessage{
 					Role:    "system",
 					Content: msg.Content,
 				})
 			}
 			systemMessageProcessed = true
 		case User:
-			openaiMessages = append(openaiMessages, OpenAIMessage{
+			openaiMessages = append(openaiMessages, openAIMessage{
 				Role:    "user",
 				Content: msg.Content,
 			})
 		case Agent:
-			openaiMessages = append(openaiMessages, OpenAIMessage{
+			openaiMessages = append(openaiMessages, openAIMessage{
 				Role:    "assistant",
 				Content: msg.Content,
 			})
@@ -145,20 +145,20 @@ func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (O
 	// Handle WithSystemMessage option
 	if cfg.SystemMsg != "" {
 		// Insert system message at the beginning
-		systemMsg := OpenAIMessage{
+		systemMsg := openAIMessage{
 			Role:    "system",
 			Content: cfg.SystemMsg,
 		}
 		if systemMessageProcessed {
 			// Replace the first message (which should be system)
-			openaiMessages = append([]OpenAIMessage{systemMsg}, openaiMessages[1:]...)
+			openaiMessages = append([]openAIMessage{systemMsg}, openaiMessages[1:]...)
 		} else {
 			// Add system message at the beginning
-			openaiMessages = append([]OpenAIMessage{systemMsg}, openaiMessages...)
+			openaiMessages = append([]openAIMessage{systemMsg}, openaiMessages...)
 		}
 	}
 
-	req := OpenAIRequest{
+	req := openAIRequest{
 		Model:       cfg.Model,
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
@@ -178,7 +178,7 @@ func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (O
 	// Add provider field if EndPoint is set (for openrouter compatibility)
 	if cfg.EndPoint != "" {
 		order := strings.Split(cfg.EndPoint, ",")
-		req.Provider = &OpenRouterProvider{
+		req.Provider = &openRouterProvider{
 			Only:           order,
 			Order:          order,
 			AllowFallbacks: true,
@@ -187,9 +187,9 @@ func prepareOpenAIRequest(messages []Message, streaming bool, cfg CallConfig) (O
 
 	// Add structured output response format if configured
 	if cfg.StructuredOutput != nil {
-		req.ResponseFormat = &OpenAIResponseFormat{
+		req.ResponseFormat = &openAIResponseFormat{
 			Type: "json_schema",
-			JSONSchema: &OpenAIJSONSchemaConfig{
+			JSONSchema: &openAIJSONSchemaConfig{
 				Name:   cfg.StructuredOutput.Name,
 				Strict: true,
 				Schema: cfg.StructuredOutput.Schema,
@@ -214,7 +214,7 @@ func (p *OpenAIProvider) call(ctx context.Context, messages []Message, cfg CallC
 
 	baseURL := p.resolveURL(cfg, "/v1/chat/completions")
 
-	resp := OpenAIResponse{}
+	resp := openAIResponse{}
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)
@@ -249,7 +249,7 @@ func (p *OpenAIProvider) call(ctx context.Context, messages []Message, cfg CallC
 }
 
 // Streaming response structures
-type OpenAIStreamResponse struct {
+type openAIStreamResponse struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
@@ -318,7 +318,7 @@ func (p *OpenAIProvider) streamCall(ctx context.Context, messages []Message, cfg
 			}
 
 			// Parse JSON
-			var streamResp OpenAIStreamResponse
+			var streamResp openAIStreamResponse
 			if err := json.Unmarshal(data, &streamResp); err != nil {
 				ch <- StreamChunk{Error: fmt.Errorf("json parse error: %w", err)}
 				return
@@ -348,13 +348,13 @@ func (p *OpenAIProvider) streamCall(ctx context.Context, messages []Message, cfg
 }
 
 // OpenAI Embedding structures
-type OpenAIEmbeddingRequest struct {
+type openAIEmbeddingRequest struct {
 	Model string   `json:"model"`
 	Input []string `json:"input"`
 }
 
-type OpenAIEmbeddingResponse struct {
-	Error *OpenAIError `json:"error,omitempty"`
+type openAIEmbeddingResponse struct {
+	Error *openAIError `json:"error,omitempty"`
 	Data  []struct {
 		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
@@ -373,14 +373,14 @@ func (p *OpenAIProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		model = "text-embedding-3-small"
 	}
 
-	body := OpenAIEmbeddingRequest{
+	body := openAIEmbeddingRequest{
 		Model: model,
 		Input: texts,
 	}
 
 	baseURL := p.resolveURL(cfg, "/v1/embeddings")
 
-	resp := OpenAIEmbeddingResponse{}
+	resp := openAIEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)

@@ -27,18 +27,18 @@ func NewVoyageClient(apiKey, model string, opts ...CallOption) Client {
 }
 
 // Voyage AI structures
-type VoyageEmbeddingRequest struct {
+type voyageEmbeddingRequest struct {
 	Input []string `json:"input"`
 	Model string   `json:"model"`
 }
 
-type VoyageError struct {
+type voyageError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
 }
 
-type VoyageEmbeddingResponse struct {
-	Error *VoyageError `json:"error,omitempty"`
+type voyageEmbeddingResponse struct {
+	Error *voyageError `json:"error,omitempty"`
 	Data  []struct {
 		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
@@ -49,7 +49,7 @@ type VoyageEmbeddingResponse struct {
 	} `json:"usage,omitempty"`
 }
 
-type VoyageRerankRequest struct {
+type voyageRerankRequest struct {
 	Query     string   `json:"query"`
 	Documents []string `json:"documents"`
 	Model     string   `json:"model"`
@@ -57,8 +57,8 @@ type VoyageRerankRequest struct {
 	// Truncation *bool    `json:"truncation,omitempty"`
 }
 
-type VoyageRerankResponse struct {
-	Error   *VoyageError `json:"error,omitempty"`
+type voyageRerankResponse struct {
+	Error   *voyageError `json:"error,omitempty"`
 	Results []struct {
 		Index          int     `json:"index"`
 		Document       string  `json:"document"`
@@ -90,7 +90,7 @@ func (p *VoyageProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		model = "voyage-3"
 	}
 
-	body := VoyageEmbeddingRequest{
+	body := voyageEmbeddingRequest{
 		Model: model,
 		Input: texts,
 	}
@@ -101,7 +101,7 @@ func (p *VoyageProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		baseURL = "https://api.voyageai.com/v1/embeddings"
 	}
 
-	resp := VoyageEmbeddingResponse{}
+	resp := voyageEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)
@@ -147,7 +147,7 @@ func (p *VoyageProvider) reRank(ctx context.Context, query string, documents []s
 		model = "rerank-2.5"
 	}
 
-	body := VoyageRerankRequest{
+	body := voyageRerankRequest{
 		Model:     model,
 		Query:     query,
 		Documents: documents,
@@ -159,7 +159,7 @@ func (p *VoyageProvider) reRank(ctx context.Context, query string, documents []s
 		baseURL = "https://api.voyageai.com/v1/rerank"
 	}
 
-	resp := VoyageRerankResponse{}
+	resp := voyageRerankResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)

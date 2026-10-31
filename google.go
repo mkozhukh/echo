@@ -14,43 +14,43 @@ type GoogleProvider struct {
 }
 
 // Gemini-specific request/response structures
-type GeminiRequest struct {
-	Contents          []GeminiContent         `json:"contents"`
-	SystemInstruction *GeminiContent          `json:"systemInstruction,omitempty"`
-	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
+type geminiRequest struct {
+	Contents          []geminiContent         `json:"contents"`
+	SystemInstruction *geminiContent          `json:"systemInstruction,omitempty"`
+	GenerationConfig  *geminiGenerationConfig `json:"generationConfig,omitempty"`
 }
 
-// GeminiGenerationConfig contains generation parameters for Gemini requests
-type GeminiGenerationConfig struct {
+// geminiGenerationConfig contains generation parameters for Gemini requests
+type geminiGenerationConfig struct {
 	Temperature      *float32              `json:"temperature,omitempty"`
 	MaxOutputTokens  *int                  `json:"maxOutputTokens,omitempty"`
 	ResponseMimeType string                `json:"responseMimeType,omitempty"`
 	ResponseSchema   any                   `json:"responseSchema,omitempty"`
-	ThinkingConfig   *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
+	ThinkingConfig   *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
 }
 
-// GeminiThinkingConfig contains thinking/reasoning configuration
-type GeminiThinkingConfig struct {
+// geminiThinkingConfig contains thinking/reasoning configuration
+type geminiThinkingConfig struct {
 	ThinkingLevel string `json:"thinkingLevel"` // "low", "medium", "high"
 }
 
-type GeminiContent struct {
+type geminiContent struct {
 	Role  string       `json:"role,omitempty"`
-	Parts []GeminiPart `json:"parts"`
+	Parts []geminiPart `json:"parts"`
 }
 
-type GeminiPart struct {
+type geminiPart struct {
 	Text string `json:"text"`
 }
 
-type GeminiError struct {
+type geminiError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Status  string `json:"status"`
 }
 
-type GeminiResponse struct {
-	Error      *GeminiError `json:"error,omitempty"`
+type geminiResponse struct {
+	Error      *geminiError `json:"error,omitempty"`
 	Candidates []struct {
 		Content struct {
 			Parts []struct {
@@ -65,8 +65,8 @@ type GeminiResponse struct {
 	} `json:"usageMetadata,omitempty"`
 }
 
-// GeminiStreamResponse represents a streaming response chunk from Gemini
-type GeminiStreamResponse struct {
+// geminiStreamResponse represents a streaming response chunk from Gemini
+type geminiStreamResponse struct {
 	Candidates []struct {
 		Content struct {
 			Parts []struct {
@@ -95,14 +95,14 @@ func NewGoogleClient(apiKey, model string, opts ...CallOption) Client {
 }
 
 // prepareGoogleRequest builds the Gemini request with the given configuration
-func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, error) {
+func prepareGoogleRequest(messages []Message, cfg CallConfig) (geminiRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return GeminiRequest{}, fmt.Errorf("invalid message chain: %w", err)
+		return geminiRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to Gemini format
-	geminiContents := []GeminiContent{}
+	geminiContents := []geminiContent{}
 	var systemMsg string
 
 	for _, msg := range messages {
@@ -110,16 +110,16 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 		case System:
 			systemMsg = msg.Content
 		case User:
-			geminiContents = append(geminiContents, GeminiContent{
+			geminiContents = append(geminiContents, geminiContent{
 				Role: "user",
-				Parts: []GeminiPart{
+				Parts: []geminiPart{
 					{Text: msg.Content},
 				},
 			})
 		case Agent:
-			geminiContents = append(geminiContents, GeminiContent{
+			geminiContents = append(geminiContents, geminiContent{
 				Role: "model",
-				Parts: []GeminiPart{
+				Parts: []geminiPart{
 					{Text: msg.Content},
 				},
 			})
@@ -127,20 +127,20 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 	}
 
 	// Create Gemini-specific request
-	geminiReq := GeminiRequest{
+	geminiReq := geminiRequest{
 		Contents: geminiContents,
 	}
 
 	// Handle system instruction - WithSystemMessage overrides message chain system
 	if cfg.SystemMsg != "" {
-		geminiReq.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
+		geminiReq.SystemInstruction = &geminiContent{
+			Parts: []geminiPart{
 				{Text: cfg.SystemMsg},
 			},
 		}
 	} else if systemMsg != "" {
-		geminiReq.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
+		geminiReq.SystemInstruction = &geminiContent{
+			Parts: []geminiPart{
 				{Text: systemMsg},
 			},
 		}
@@ -148,7 +148,7 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 
 	// Add generation config if temperature, max tokens, structured output, or reasoning effort are set
 	if cfg.Temperature != nil || cfg.MaxTokens != nil || cfg.StructuredOutput != nil || cfg.ReasoningEffort != "" {
-		geminiReq.GenerationConfig = &GeminiGenerationConfig{
+		geminiReq.GenerationConfig = &geminiGenerationConfig{
 			Temperature:     cfg.Temperature,
 			MaxOutputTokens: cfg.MaxTokens,
 		}
@@ -161,7 +161,7 @@ func prepareGoogleRequest(messages []Message, cfg CallConfig) (GeminiRequest, er
 
 		// Add thinking/reasoning configuration
 		if cfg.ReasoningEffort != "" {
-			geminiReq.GenerationConfig.ThinkingConfig = &GeminiThinkingConfig{
+			geminiReq.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{
 				ThinkingLevel: cfg.ReasoningEffort,
 			}
 		}
@@ -184,7 +184,7 @@ func (p *GoogleProvider) call(ctx context.Context, messages []Message, cfg CallC
 	}
 
 	// Call the Gemini API using shared HTTP function
-	var response GeminiResponse
+	var response geminiResponse
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("x-goog-api-key", p.Key)
 	}, geminiReq, &response)
@@ -250,7 +250,7 @@ func (p *GoogleProvider) streamCall(ctx context.Context, messages []Message, cfg
 	go func() {
 		defer close(ch)
 
-		err := parseSSEStream(respBody, func(msg SSEMessage) error {
+		err := parseSSEStream(respBody, func(msg sseMessage) error {
 			processGeminiSSEMessage(msg, ch)
 			return nil
 		})
@@ -264,13 +264,13 @@ func (p *GoogleProvider) streamCall(ctx context.Context, messages []Message, cfg
 }
 
 // processGeminiSSEMessage processes individual Gemini SSE messages
-func processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
+func processGeminiSSEMessage(msg sseMessage, ch chan StreamChunk) {
 	if len(msg.Data) == 0 {
 		return
 	}
 
 	// Parse JSON
-	var streamResp GeminiStreamResponse
+	var streamResp geminiStreamResponse
 	if err := json.Unmarshal(msg.Data, &streamResp); err != nil {
 		ch <- StreamChunk{Error: fmt.Errorf("json parse error: %w", err)}
 		return
@@ -299,29 +299,17 @@ func processGeminiSSEMessage(msg SSEMessage, ch chan StreamChunk) {
 	}
 }
 
-// Google Embedding structures
-type GoogleEmbeddingRequest struct {
-	Content GeminiContent `json:"content"`
+type googleBatchEmbeddingRequest struct {
+	Requests []googleBatchEmbeddingRequestItem `json:"requests"`
 }
 
-type GoogleEmbeddingResponse struct {
-	Error     *GeminiError `json:"error,omitempty"`
-	Embedding struct {
-		Values []float32 `json:"values"`
-	} `json:"embedding"`
-}
-
-type GoogleBatchEmbeddingRequest struct {
-	Requests []GoogleBatchEmbeddingRequestItem `json:"requests"`
-}
-
-type GoogleBatchEmbeddingRequestItem struct {
+type googleBatchEmbeddingRequestItem struct {
 	Model   string        `json:"model"`
-	Content GeminiContent `json:"content"`
+	Content geminiContent `json:"content"`
 }
 
-type GoogleBatchEmbeddingResponse struct {
-	Error      *GeminiError `json:"error,omitempty"`
+type googleBatchEmbeddingResponse struct {
+	Error      *geminiError `json:"error,omitempty"`
 	Embeddings []struct {
 		Values []float32 `json:"values"`
 	} `json:"embeddings"`
@@ -336,17 +324,17 @@ func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 	}
 
 	// Build batch request
-	requests := make([]GoogleBatchEmbeddingRequestItem, len(texts))
+	requests := make([]googleBatchEmbeddingRequestItem, len(texts))
 	for i, text := range texts {
-		requests[i] = GoogleBatchEmbeddingRequestItem{
+		requests[i] = googleBatchEmbeddingRequestItem{
 			Model: "models/" + model,
-			Content: GeminiContent{
-				Parts: []GeminiPart{{Text: text}},
+			Content: geminiContent{
+				Parts: []geminiPart{{Text: text}},
 			},
 		}
 	}
 
-	body := GoogleBatchEmbeddingRequest{Requests: requests}
+	body := googleBatchEmbeddingRequest{Requests: requests}
 
 	// Build the base URL with model
 	baseURL := cfg.BaseURL
@@ -354,7 +342,7 @@ func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 		baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":batchEmbedContents"
 	}
 
-	resp := GoogleBatchEmbeddingResponse{}
+	resp := googleBatchEmbeddingResponse{}
 	err := callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("x-goog-api-key", p.Key)
 	}, body, &resp)

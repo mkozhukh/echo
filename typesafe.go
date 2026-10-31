@@ -41,7 +41,7 @@ type typesafeResponse struct {
 }
 
 // decide implements the decider interface
-func (p *TypeSafeProvider) decide(ctx context.Context, req DecisionRequest, cfg CallConfig) (*DecisionResponse, error) {
+func (p *TypeSafeProvider) decide(ctx context.Context, req decisionRequest, cfg CallConfig) (*DecisionResponse, error) {
 	if req.Model == "" {
 		req.Model = typesafeDefaultModel
 	}

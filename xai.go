@@ -11,30 +11,30 @@ import (
 	"strings"
 )
 
-// XAIRequest represents a request to the xAI chat completions API
-type XAIRequest struct {
+// xaiRequest represents a request to the xAI chat completions API
+type xaiRequest struct {
 	Model         string          `json:"model"`
 	Temperature   *float32        `json:"temperature,omitempty"`
 	MaxTokens     *int            `json:"max_completion_tokens,omitempty"`
-	Messages      []OpenAIMessage `json:"messages"`
+	Messages      []openAIMessage `json:"messages"`
 	Stream        bool            `json:"stream,omitempty"`
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
-	ResponseFormat  *OpenAIResponseFormat `json:"response_format,omitempty"`
+	ResponseFormat  *openAIResponseFormat `json:"response_format,omitempty"`
 	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
 	Store           *bool                 `json:"store,omitempty"` // xAI-specific: set to false to disable server-side storage
 }
 
-// XAIError represents an error from the xAI API
-type XAIError struct {
+// xaiError represents an error from the xAI API
+type xaiError struct {
 	Message string `json:"message"`
 	Code    int32  `json:"code"`
 }
 
-// XAIResponse represents a response from the xAI chat completions API
-type XAIResponse struct {
-	Error   *XAIError `json:"error,omitempty"`
+// xaiResponse represents a response from the xAI chat completions API
+type xaiResponse struct {
+	Error   *xaiError `json:"error,omitempty"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -47,8 +47,8 @@ type XAIResponse struct {
 	} `json:"usage,omitempty"`
 }
 
-// XAIStreamResponse represents a streaming response chunk from xAI
-type XAIStreamResponse struct {
+// xaiStreamResponse represents a streaming response chunk from xAI
+type xaiStreamResponse struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
@@ -80,14 +80,14 @@ func NewXAIClient(apiKey, model string, opts ...CallOption) Client {
 }
 
 // prepareXAIRequest builds the xAI request with the given configuration
-func prepareXAIRequest(messages []Message, streaming bool, cfg CallConfig) (XAIRequest, error) {
+func prepareXAIRequest(messages []Message, streaming bool, cfg CallConfig) (xaiRequest, error) {
 	// Validate messages
 	if err := validateMessages(messages); err != nil {
-		return XAIRequest{}, fmt.Errorf("invalid message chain: %w", err)
+		return xaiRequest{}, fmt.Errorf("invalid message chain: %w", err)
 	}
 
 	// Convert messages to OpenAI format (xAI is OpenAI-compatible)
-	xaiMessages := []OpenAIMessage{}
+	xaiMessages := []openAIMessage{}
 	systemMessageProcessed := false
 
 	for _, msg := range messages {
@@ -95,19 +95,19 @@ func prepareXAIRequest(messages []Message, streaming bool, cfg CallConfig) (XAIR
 		case System:
 			// Skip system message here if WithSystemMessage is set
 			if cfg.SystemMsg == "" {
-				xaiMessages = append(xaiMessages, OpenAIMessage{
+				xaiMessages = append(xaiMessages, openAIMessage{
 					Role:    "system",
 					Content: msg.Content,
 				})
 			}
 			systemMessageProcessed = true
 		case User:
-			xaiMessages = append(xaiMessages, OpenAIMessage{
+			xaiMessages = append(xaiMessages, openAIMessage{
 				Role:    "user",
 				Content: msg.Content,
 			})
 		case Agent:
-			xaiMessages = append(xaiMessages, OpenAIMessage{
+			xaiMessages = append(xaiMessages, openAIMessage{
 				Role:    "assistant",
 				Content: msg.Content,
 			})
@@ -117,20 +117,20 @@ func prepareXAIRequest(messages []Message, streaming bool, cfg CallConfig) (XAIR
 	// Handle WithSystemMessage option
 	if cfg.SystemMsg != "" {
 		// Insert system message at the beginning
-		systemMsg := OpenAIMessage{
+		systemMsg := openAIMessage{
 			Role:    "system",
 			Content: cfg.SystemMsg,
 		}
 		if systemMessageProcessed {
 			// Replace the first message (which should be system)
-			xaiMessages = append([]OpenAIMessage{systemMsg}, xaiMessages[1:]...)
+			xaiMessages = append([]openAIMessage{systemMsg}, xaiMessages[1:]...)
 		} else {
 			// Add system message at the beginning
-			xaiMessages = append([]OpenAIMessage{systemMsg}, xaiMessages...)
+			xaiMessages = append([]openAIMessage{systemMsg}, xaiMessages...)
 		}
 	}
 
-	req := XAIRequest{
+	req := xaiRequest{
 		Model:       cfg.Model,
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
@@ -158,9 +158,9 @@ func prepareXAIRequest(messages []Message, streaming bool, cfg CallConfig) (XAIR
 
 	// Add structured output response format if configured
 	if cfg.StructuredOutput != nil {
-		req.ResponseFormat = &OpenAIResponseFormat{
+		req.ResponseFormat = &openAIResponseFormat{
 			Type: "json_schema",
-			JSONSchema: &OpenAIJSONSchemaConfig{
+			JSONSchema: &openAIJSONSchemaConfig{
 				Name:   cfg.StructuredOutput.Name,
 				Strict: true,
 				Schema: cfg.StructuredOutput.Schema,
@@ -189,7 +189,7 @@ func (p *XAIProvider) call(ctx context.Context, messages []Message, cfg CallConf
 		baseURL = "https://api.x.ai/v1/chat/completions"
 	}
 
-	resp := XAIResponse{}
+	resp := xaiResponse{}
 	err = callHTTPAPI(ctx, baseURL, func(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}, body, &resp)
@@ -283,7 +283,7 @@ func (p *XAIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 			}
 
 			// Parse JSON
-			var streamResp XAIStreamResponse
+			var streamResp xaiStreamResponse
 			if err := json.Unmarshal(data, &streamResp); err != nil {
 				ch <- StreamChunk{Error: fmt.Errorf("json parse error: %w", err)}
 				return

@@ -79,8 +79,8 @@ func (q Question) WithCriteria(criteria any) Question {
 	return q
 }
 
-// DecisionRequest is the request for a decision call.
-type DecisionRequest struct {
+// decisionRequest is the request for a decision call.
+type decisionRequest struct {
 	State     any       `json:"state"`
 	Model     string    `json:"model"`
 	Questions Questions `json:"questions"`
@@ -126,7 +126,7 @@ func (r *DecisionResponse) Noul(id string) float64 {
 
 // decider is an optional provider capability for decision calls.
 type decider interface {
-	decide(ctx context.Context, req DecisionRequest, cfg CallConfig) (*DecisionResponse, error)
+	decide(ctx context.Context, req decisionRequest, cfg CallConfig) (*DecisionResponse, error)
 }
 
 func validateQuestions(questions Questions) error {
@@ -163,5 +163,5 @@ func (c *CommonClient) Decide(ctx context.Context, state any, questions Question
 		return nil, err
 	}
 
-	return d.decide(ctx, DecisionRequest{State: state, Model: cfg.Model, Questions: questions}, cfg)
+	return d.decide(ctx, decisionRequest{State: state, Model: cfg.Model, Questions: questions}, cfg)
 }

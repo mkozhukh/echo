@@ -115,7 +115,7 @@ func (p *MockProvider) streamCall(ctx context.Context, messages []Message, cfg C
 
 // decide implements the decider interface with deterministic answers:
 // choice picks the first option, score picks the lowest level, noul returns 0.5.
-func (p *MockProvider) decide(ctx context.Context, req DecisionRequest, cfg CallConfig) (*DecisionResponse, error) {
+func (p *MockProvider) decide(ctx context.Context, req decisionRequest, cfg CallConfig) (*DecisionResponse, error) {
 	one := 1.0
 	answers := make(map[string]Answer, len(req.Questions))
 

@@ -10,10 +10,10 @@ import (
 	"net/http"
 )
 
-type RequestInit func(*http.Request)
+type requestInit func(*http.Request)
 
 // callHTTPAPI is a generic function that makes HTTP requests and decodes responses
-func callHTTPAPI(ctx context.Context, url string, init RequestInit, body any, responsePtr any) error {
+func callHTTPAPI(ctx context.Context, url string, init requestInit, body any, responsePtr any) error {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -48,7 +48,7 @@ func callHTTPAPI(ctx context.Context, url string, init RequestInit, body any, re
 }
 
 // streamHTTPAPI makes streaming HTTP requests and returns the response body
-func streamHTTPAPI(ctx context.Context, url string, init RequestInit, body any) (io.ReadCloser, error) {
+func streamHTTPAPI(ctx context.Context, url string, init requestInit, body any) (io.ReadCloser, error) {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -76,8 +76,8 @@ func streamHTTPAPI(ctx context.Context, url string, init RequestInit, body any) 
 	return resp.Body, nil
 }
 
-// SSEMessage represents a parsed SSE message
-type SSEMessage struct {
+// sseMessage represents a parsed SSE message
+type sseMessage struct {
 	Event string
 	Data  []byte
 }
@@ -88,7 +88,7 @@ var doneMarker = []byte("[DONE]")
 var emptyLine = []byte("")
 
 // parseSSEStream parses Server-Sent Events stream and calls handler for each complete message
-func parseSSEStream(respBody io.ReadCloser, handler func(SSEMessage) error) error {
+func parseSSEStream(respBody io.ReadCloser, handler func(sseMessage) error) error {
 	defer respBody.Close()
 
 	var buffer bytes.Buffer
@@ -100,7 +100,7 @@ func parseSSEStream(respBody io.ReadCloser, handler func(SSEMessage) error) erro
 		if err == io.EOF {
 			// Process any remaining data in buffer
 			if buffer.Len() > 0 {
-				msg := SSEMessage{Event: currentEvent, Data: buffer.Bytes()}
+				msg := sseMessage{Event: currentEvent, Data: buffer.Bytes()}
 				if err := handler(msg); err != nil {
 					return err
 				}
@@ -115,7 +115,7 @@ func parseSSEStream(respBody io.ReadCloser, handler func(SSEMessage) error) erro
 		if bytes.Equal(bytes.TrimSpace(line), emptyLine) {
 			// End of message, process buffer contents if we have data
 			if buffer.Len() > 0 {
-				msg := SSEMessage{Event: currentEvent, Data: buffer.Bytes()}
+				msg := sseMessage{Event: currentEvent, Data: buffer.Bytes()}
 				if err := handler(msg); err != nil {
 					return err
 				}
