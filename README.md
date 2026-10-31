@@ -9,6 +9,7 @@ A lightweight Go library for interacting with various LLM providers with a simpl
 - Google
 - OpenRouter (via OpenAI-compatible API)
 - xAI (Grok)
+- TypeSafe (Jev) - decision calls only, see [Decision Calls](#decision-calls-typesafe-jev)
 - Local CLI tools (Claude Code, Codex, Gemini) - opt-in, see [Local CLI Providers](#local-cli-providers)
 
 ## Installation
@@ -77,6 +78,9 @@ client := echo.NewXAIClient("your-api-key", "grok-4-0709")
 
 // Voyage AI (embeddings & reranking)
 client := echo.NewVoyageClient("your-api-key", "voyage-4-large")
+
+// TypeSafe (Jev decision calls)
+client := echo.NewTypeSafeClient("your-api-key", "jev-latest")
 ```
 
 These accept the same `CallOption` options as `NewCommonClient`:
@@ -121,6 +125,7 @@ os.Setenv("OPENAI_API_KEY", "your-openai-key")
 os.Setenv("ANTHROPIC_API_KEY", "your-anthropic-key")
 os.Setenv("GOOGLE_API_KEY", "your-google-key")
 os.Setenv("XAI_API_KEY", "your-xai-key")
+os.Setenv("TYPESAFE_API_KEY", "your-typesafe-key")
 
 // API key is automatically selected based on provider
 client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-5"))
@@ -321,6 +326,46 @@ resp, _ := client.Complete(ctx, echo.QuickMessage("Hello"),
     echo.WithStoreData(true),
 )
 ```
+
+## Decision Calls (TypeSafe Jev)
+
+[TypeSafe Jev](https://docs.typesafe.ai/introduction) answers typed questions about a state
+instead of generating text. Use `Decide` with three question types:
+
+- `Choice` - picks one option; returns the choice, probabilities and confidence
+- `Score` - scores the state on ordered levels; returns a score (can fall between levels), probabilities and confidence
+- `Noul` - probability (0..1) that a statement is true
+
+```go
+client, _ := echo.NewCommonClient(nil, echo.WithModel("typesafe/jev-latest"))
+
+resp, err := client.Decide(ctx, ticketText, echo.Questions{
+    "type": echo.Choice("What is the main request?",
+        echo.Option{Name: "refund", Description: "wants money back"},
+        echo.Option{Name: "bug", Description: "reports a defect"},
+    ),
+    "anger":    echo.Score("How frustrated is the customer?", "calm", "annoyed", "furious"),
+    "escalate": echo.Noul("The customer threatens to cancel"),
+})
+if err != nil {
+    panic(err)
+}
+
+if kind, conf := resp.Choice("type"); kind == "refund" && conf > 0.8 {
+    // ...
+}
+fmt.Println(resp.Score("anger"), resp.Noul("escalate"))
+
+// Full answer details: probabilities, legend, confidence
+fmt.Println(resp.Answers["anger"].Probabilities)
+```
+
+The state can be a string or any JSON-serializable value. Options are sent in the declared order.
+Use `WithCriteria` to clarify a `Noul` question, or build a `Question` literal for object/array instructions.
+Usage stats are in `resp.Metadata` (`input_tokens`, `output_tokens`, `total_tokens`).
+
+Other providers return a "not supported" error for `Decide`; the `mock` provider returns deterministic
+answers (first option, lowest level, 0.5) for tests. TypeSafe supports only `Decide`.
 
 ## E2E Testing
 

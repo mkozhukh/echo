@@ -69,6 +69,7 @@ var knownProviders = map[string]providerRetriver{
 	"openrouter": func(key string) Provider { return &OpenAIProvider{Key: key} },
 	"voyage":     func(key string) Provider { return &VoyageProvider{Key: key} },
 	"xai":        func(key string) Provider { return &XAIProvider{Key: key} },
+	"typesafe":   func(key string) Provider { return &TypeSafeProvider{Key: key} },
 }
 
 func NewCommonClient(keys map[string]string, opts ...CallOption) (Client, error) {
@@ -331,4 +332,8 @@ var alises = map[string]string{
 	"xai/best":     "xai/grok-4-0709",
 	"xai/balanced": "xai/grok-4-1-fast-reasoning",
 	"xai/light":    "xai/grok-4-1-fast-non-reasoning",
+
+	"typesafe/best":     "typesafe/jev-latest",
+	"typesafe/balanced": "typesafe/jev-latest",
+	"typesafe/light":    "typesafe/jev-latest",
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -216,4 +217,82 @@ func (p *MockProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *Unifi
 func (p *MockProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
+}
+
+// decide implements the decider interface with deterministic answers:
+// choice picks the first option, score picks the lowest level, noul returns 0.5.
+func (p *MockProvider) decide(ctx context.Context, req DecisionRequest, cfg CallConfig) (*DecisionResponse, error) {
+	one := 1.0
+	answers := make(map[string]Answer, len(req.Questions))
+
+	for id, q := range req.Questions {
+		a := Answer{Type: q.Type}
+		switch q.Type {
+		case QuestionChoice:
+			names := mockOptionNames(q.Criteria)
+			if len(names) == 0 {
+				return nil, fmt.Errorf("question %q: no options", id)
+			}
+			a.Choice = names[0]
+			a.Confidence = &one
+			a.Probabilities = map[string]float64{}
+			for i, n := range names {
+				if i == 0 {
+					a.Probabilities[n] = 1
+				} else {
+					a.Probabilities[n] = 0
+				}
+			}
+		case QuestionScore:
+			levels, _ := q.Criteria.([]string)
+			a.Score = 0
+			a.Confidence = &one
+			a.Legend = map[string]string{}
+			a.Probabilities = map[string]float64{}
+			for i, l := range levels {
+				key := fmt.Sprint(i)
+				a.Legend[key] = l
+				if i == 0 {
+					a.Probabilities[key] = 1
+				} else {
+					a.Probabilities[key] = 0
+				}
+			}
+		case QuestionNoul:
+			a.Noul = 0.5
+		}
+		answers[id] = a
+	}
+
+	return &DecisionResponse{
+		Model:   req.Model,
+		Answers: answers,
+		Metadata: Metadata{
+			"mock":           true,
+			"question_count": len(req.Questions),
+		},
+	}, nil
+}
+
+func mockOptionNames(criteria any) []string {
+	switch c := criteria.(type) {
+	case choiceCriteria:
+		names := make([]string, len(c))
+		for i, o := range c {
+			names[i] = o.Name
+		}
+		return names
+	case []Option:
+		return mockOptionNames(choiceCriteria(c))
+	case []string:
+		return c
+	case map[string]string:
+		names := make([]string, 0, len(c))
+		for n := range c {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return names
+	}
+	return nil
 }

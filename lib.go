@@ -17,6 +17,9 @@ type Client interface {
 	GetEmbeddings(ctx context.Context, texts []string, opts ...CallOption) (*EmbeddingResponse, error)
 	// ReRank reranks documents based on relevance to query
 	ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error)
+	// Decide evaluates typed questions (choice, score, noul) against the state
+	// and returns structured answers. Supported by decision models (e.g. typesafe/jev-latest).
+	Decide(ctx context.Context, state any, questions Questions, opts ...CallOption) (*DecisionResponse, error)
 }
 
 // ProxyClient extends Client with HTTP proxy capabilities for building LLM proxies
