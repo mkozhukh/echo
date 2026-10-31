@@ -248,9 +248,9 @@ func EnableLocalLlama(client Client) {
 // referenced through the standard "provider/model" syntax:
 //
 //	claude-cli/<model>     e.g. claude-cli/opus
-//	codex-cli/<model>      e.g. codex-cli/gpt-5
+//	codex-cli/<model>      e.g. codex-cli/gpt-6.1-sol
 //	gemini-cli/<model>     e.g. gemini-cli/pro
-//	opencode-cli/<model>   e.g. opencode-cli/anthropic/claude-sonnet-4
+//	opencode-cli/<model>   e.g. opencode-cli/anthropic/claude-sonnet-5-5
 //
 // Binary paths can be overridden via the environment variables
 // ECHO_CLAUDE_CLI_PATH, ECHO_CODEX_CLI_PATH, ECHO_GEMINI_CLI_PATH, and

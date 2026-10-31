@@ -39,7 +39,7 @@ func main() {
     // Create client with explicit API keys
     client, err := echo.NewCommonClient(map[string]string{
         "openai": "your-openai-key",
-    }, echo.WithModel("openai/gpt-5"))
+    }, echo.WithModel("openai/gpt-6.1-sol"))
     if err != nil {
         panic(err)
     }
@@ -56,7 +56,7 @@ func main() {
 Pass `nil` as keys to auto-detect API keys from environment variables:
 
 ```go
-client, err := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-5"))
+client, err := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-6.1-sol"))
 ```
 
 ### Provider-Specific Clients
@@ -65,16 +65,16 @@ If you only need a single provider, use the dedicated constructors:
 
 ```go
 // OpenAI
-client := echo.NewOpenAIClient("your-api-key", "gpt-5")
+client := echo.NewOpenAIClient("your-api-key", "gpt-6.1-sol")
 
 // Anthropic
-client := echo.NewAnthropicClient("your-api-key", "claude-sonnet-4-5")
+client := echo.NewAnthropicClient("your-api-key", "claude-sonnet-5-5")
 
 // Google
-client := echo.NewGoogleClient("your-api-key", "gemini-2.5-pro")
+client := echo.NewGoogleClient("your-api-key", "gemini-4-argon")
 
 // xAI (Grok)
-client := echo.NewXAIClient("your-api-key", "grok-4-0709")
+client := echo.NewXAIClient("your-api-key", "grok-4.7")
 
 // Voyage AI (embeddings & reranking)
 client := echo.NewVoyageClient("your-api-key", "voyage-4-large")
@@ -86,7 +86,7 @@ client := echo.NewTypeSafeClient("your-api-key", "jev-latest")
 These accept the same `CallOption` options as `NewCommonClient`:
 
 ```go
-client := echo.NewOpenAIClient("your-api-key", "gpt-5",
+client := echo.NewOpenAIClient("your-api-key", "gpt-6.1-sol",
     echo.WithSystemMessage("You are a helpful assistant."),
     echo.WithTemperature(0.7),
 )
@@ -102,11 +102,21 @@ Use convenient aliases instead of full model names:
 // - balanced: Good balance of quality and speed
 // - light: Fast and economical
 
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/best"))      // Uses gpt-5.2
-client, _ := echo.NewCommonClient(nil, echo.WithModel("anthropic/balanced")) // Uses claude-opus-4-5
-client, _ := echo.NewCommonClient(nil, echo.WithModel("google/light"))      // Uses gemini-2.5-flash
-client, _ := echo.NewCommonClient(nil, echo.WithModel("xai/best"))          // Uses grok-4-0709
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/best"))        // Uses gpt-6-astra
+client, _ := echo.NewCommonClient(nil, echo.WithModel("anthropic/balanced")) // Uses claude-sonnet-5-5
+client, _ := echo.NewCommonClient(nil, echo.WithModel("google/light"))       // Uses gemini-3.5-flash-lite
+client, _ := echo.NewCommonClient(nil, echo.WithModel("xai/best"))           // Uses grok-4.7
 ```
+
+| Provider | `best` | `balanced` | `light` |
+|----------|--------|------------|---------|
+| openai | gpt-6-astra | gpt-6.1-sol | gpt-6-luna |
+| anthropic | claude-fable-5-1 | claude-sonnet-5-5 | claude-haiku-5-5 |
+| google | gemini-4-argon | gemini-3.8-flash | gemini-3.5-flash-lite |
+| xai | grok-4.7 | grok-4.3 | grok-4.20-0309-non-reasoning |
+| openrouter | openai/gpt-6-astra | openai/gpt-6.1-sol | openai/gpt-6-luna |
+| voyage (embeddings) | voyage-4-large | voyage-4 | voyage-4-lite |
+| typesafe | jev-latest | jev-latest | jev-latest |
 
 ### Environment Variables
 
@@ -128,7 +138,7 @@ os.Setenv("XAI_API_KEY", "your-xai-key")
 os.Setenv("TYPESAFE_API_KEY", "your-typesafe-key")
 
 // API key is automatically selected based on provider
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-5"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-6.1-sol"))
 ```
 
 ## Message Chains
@@ -220,19 +230,19 @@ The library supports switching providers on a per-call basis using `WithModel`:
 
 ```go
 // Create a client with a default provider
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-4"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openai/gpt-6.1-sol"))
 
 // Use different providers for different calls
 resp1, _ := client.Complete(ctx, echo.QuickMessage("Analyze this text"),
-    echo.WithModel("anthropic/claude-3.5-sonnet"), // Use Anthropic for analysis
+    echo.WithModel("anthropic/claude-opus-5-5"), // Use Anthropic for analysis
 )
 
 resp2, _ := client.Complete(ctx, echo.QuickMessage("Generate an image description"),
-    echo.WithModel("google/gemini-2.5-pro"), // Use Google for creative tasks
+    echo.WithModel("google/gemini-4-argon"), // Use Google for creative tasks
 )
 
 resp3, _ := client.Complete(ctx, echo.QuickMessage("Quick calculation"),
-    echo.WithModel("openai/gpt-5-mini"), // Use a lighter model for simple tasks
+    echo.WithModel("openai/gpt-6-luna"), // Use a lighter model for simple tasks
 )
 ```
 
@@ -389,17 +399,17 @@ OpenRouter provides access to multiple LLM providers through a single API:
 // Basic usage with any OpenRouter model
 client, _ := echo.NewCommonClient(map[string]string{
     "openrouter": "your-openrouter-key",
-}, echo.WithModel("openrouter/claude-3.5-sonnet"))
+}, echo.WithModel("openrouter/anthropic/claude-sonnet-5.5"))
 ```
 
 you can specify which underlying provider infrastructure to use:
 
 ```go
 // Specify provider routing with @ syntax in model name
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/claude-3.5-sonnet@aws"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/anthropic/claude-sonnet-5.5@amazon-bedrock"))
 
 // Multiple providers for fallback (comma-separated)
-client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/gpt-4@azure,openai"))
+client, _ := echo.NewCommonClient(nil, echo.WithModel("openrouter/openai/gpt-6.1-sol@azure,openai"))
 ```
 
 ### Using xAI (Grok)
@@ -410,7 +420,7 @@ xAI provides access to Grok models:
 // Basic usage
 client, _ := echo.NewCommonClient(map[string]string{
     "xai": "your-xai-key",
-}, echo.WithModel("xai/grok-4-0709"))
+}, echo.WithModel("xai/grok-4.7"))
 
 // Server-side storage is disabled by default for privacy
 // To explicitly enable storage:

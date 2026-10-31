@@ -328,10 +328,10 @@ type googleBatchEmbeddingResponse struct {
 
 // getEmbeddings implements the provider interface for Google embeddings
 func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	// Use provided model or default to text-embedding-004
+	// Use provided model or default to gemini-embedding-2
 	model := cfg.Model
 	if model == "" {
-		model = "text-embedding-004"
+		model = "gemini-embedding-2"
 	}
 
 	// Build batch request

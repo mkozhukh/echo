@@ -84,10 +84,10 @@ func (p *VoyageProvider) streamCall(ctx context.Context, messages []Message, cfg
 
 // getEmbeddings implements the provider interface for Voyage AI embeddings
 func (p *VoyageProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	// Use provided model or default to voyage-3
+	// Use provided model or default to voyage-4
 	model := cfg.Model
 	if model == "" {
-		model = "voyage-3"
+		model = "voyage-4"
 	}
 
 	body := voyageEmbeddingRequest{
@@ -137,10 +137,10 @@ func (p *VoyageProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 
 // reRank implements the provider interface for Voyage AI reranking
 func (p *VoyageProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	// Use provided model or default to rerank-2.5
+	// Use provided model or default to rerank-3
 	model := cfg.Model
 	if model == "" {
-		model = "rerank-2.5"
+		model = "rerank-3"
 	}
 
 	body := voyageRerankRequest{

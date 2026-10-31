@@ -282,29 +282,29 @@ func parseModelString(fullModelName string) (string, string, string, error) {
 
 // Model aliases for each provider
 var alises = map[string]string{
-	"openai/best":     "openai/gpt-5.2",
-	"openai/balanced": "openai/gpt-5-mini",
-	"openai/light":    "openai/gpt-5-nano",
+	"openai/best":     "openai/gpt-6-astra",
+	"openai/balanced": "openai/gpt-6.1-sol",
+	"openai/light":    "openai/gpt-6-luna",
 
-	"anthropic/best":     "anthropic/claude-sonnet-4-5",
-	"anthropic/balanced": "anthropic/claude-opus-4-5",
-	"anthropic/light":    "anthropic/claude-haiku-4-5",
+	"anthropic/best":     "anthropic/claude-fable-5-1",
+	"anthropic/balanced": "anthropic/claude-sonnet-5-5",
+	"anthropic/light":    "anthropic/claude-haiku-5-5",
 
-	"google/best":     "google/gemini-2.5-pro",
-	"google/balanced": "google/gemini-2.5-flash",
-	"google/light":    "google/gemini-2.5-flash",
+	"google/best":     "google/gemini-4-argon",
+	"google/balanced": "google/gemini-3.8-flash",
+	"google/light":    "google/gemini-3.5-flash-lite",
 
-	"openrouter/best":     "openrouter/openai/gpt-5",
-	"openrouter/balanced": "openrouter/openai/gpt-5-mini",
-	"openrouter/light":    "openrouter/openai/gpt-5-nano",
+	"openrouter/best":     "openrouter/openai/gpt-6-astra",
+	"openrouter/balanced": "openrouter/openai/gpt-6.1-sol",
+	"openrouter/light":    "openrouter/openai/gpt-6-luna",
 
 	"voyage/best":     "voyage/voyage-4-large",
 	"voyage/balanced": "voyage/voyage-4",
 	"voyage/light":    "voyage/voyage-4-lite",
 
-	"xai/best":     "xai/grok-4-0709",
-	"xai/balanced": "xai/grok-4-1-fast-reasoning",
-	"xai/light":    "xai/grok-4-1-fast-non-reasoning",
+	"xai/best":     "xai/grok-4.7",
+	"xai/balanced": "xai/grok-4.3",
+	"xai/light":    "xai/grok-4.20-0309-non-reasoning",
 
 	"typesafe/best":     "typesafe/jev-latest",
 	"typesafe/balanced": "typesafe/jev-latest",
