@@ -2,9 +2,7 @@ package echo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 )
@@ -113,68 +111,6 @@ func (p *MockProvider) streamCall(ctx context.Context, messages []Message, cfg C
 	return &StreamResponse{
 		Stream: ch,
 	}, nil
-}
-
-// parseCompletionRequest parses an HTTP request into a CompletionRequest
-func (p *MockProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	var completionReq CompletionRequest
-	if err := json.NewDecoder(req.Body).Decode(&completionReq); err != nil {
-		return nil, fmt.Errorf("failed to parse mock completion request: %w", err)
-	}
-	return &completionReq, nil
-}
-
-// buildCompletionRequest builds and executes a completion request, returning a unified response
-func (p *MockProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
-	// Create mock response with combined message content
-	var combinedContent strings.Builder
-	for i, msg := range req.Messages {
-		if i > 0 {
-			combinedContent.WriteString("\n")
-		}
-		combinedContent.WriteString(fmt.Sprintf("[%s]: %s", msg.Role, msg.Content))
-	}
-
-	// Create unified completion response
-	completionResp := &CompletionResponse{
-		ID:      "mock-completion-id",
-		Object:  "chat.completion",
-		Created: 0,
-		Model:   req.Model,
-		Choices: make([]struct {
-			Index   int `json:"index"`
-			Message struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason,omitempty"`
-		}, 1),
-	}
-
-	completionResp.Choices[0].Index = 0
-	completionResp.Choices[0].Message.Role = "assistant"
-	completionResp.Choices[0].Message.Content = combinedContent.String()
-	completionResp.Choices[0].FinishReason = "stop"
-
-	// Add mock usage
-	completionResp.Usage = &struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	}{
-		PromptTokens:     len(req.Messages) * 10,
-		CompletionTokens: 20,
-		TotalTokens:      len(req.Messages)*10 + 20,
-	}
-
-	return completionResp, nil
-}
-
-// writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
-func (p *MockProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	w.Header().Set("Content-Type", "plain/text")
-	_, err := w.Write([]byte(resp.Choices[0].Message.Content))
-	return err
 }
 
 // decide implements the decider interface with deterministic answers:

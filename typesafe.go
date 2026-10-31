@@ -87,15 +87,3 @@ func (p *TypeSafeProvider) call(ctx context.Context, messages []Message, cfg Cal
 func (p *TypeSafeProvider) streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error) {
 	return nil, errTypeSafeOnlyDecisions
 }
-
-func (p *TypeSafeProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	return errTypeSafeOnlyDecisions
-}

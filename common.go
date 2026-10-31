@@ -3,7 +3,6 @@ package echo
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 )
@@ -14,29 +13,16 @@ import (
 type Provider interface {
 	call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error)
 	streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error)
-
-	// Proxy support: parse HTTP request, execute, write HTTP response
-	parseCompletionRequest(req *http.Request) (*CompletionRequest, error)
-	buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error)
-	writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error
 }
 
 // embedder is an optional provider capability for embeddings.
 type embedder interface {
 	getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error)
-
-	parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error)
-	buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error)
-	writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error
 }
 
 // reranker is an optional provider capability for document reranking.
 type reranker interface {
 	reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
-
-	parseRerankRequest(req *http.Request) (*RerankRequest, error)
-	buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error)
-	writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error
 }
 
 // compile-time checks for provider capabilities
@@ -210,78 +196,6 @@ func (c *CommonClient) ReRank(ctx context.Context, query string, documents []str
 		return nil, err
 	}
 	return r.reRank(ctx, query, documents, cfg)
-}
-
-func (c *CommonClient) ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error) {
-	p, _, err := c.prepareCall(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return p.parseCompletionRequest(req)
-}
-
-func (c *CommonClient) ExecComplete(ctx context.Context, req *CompletionRequest, opts ...CallOption) (*CompletionResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return p.buildCompletionRequest(ctx, req, cfg)
-}
-
-func (c *CommonClient) WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error {
-	p, _, err := c.prepareCall(opts...)
-	if err != nil {
-		return err
-	}
-	return p.writeCompletionResponse(w, resp)
-}
-
-func (c *CommonClient) ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error) {
-	e, _, err := prepareCapability[embedder](c, "embeddings", opts)
-	if err != nil {
-		return nil, err
-	}
-	return e.parseEmbeddingRequest(req)
-}
-
-func (c *CommonClient) ExecEmbedding(ctx context.Context, req *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error) {
-	e, cfg, err := prepareCapability[embedder](c, "embeddings", opts)
-	if err != nil {
-		return nil, err
-	}
-	return e.buildEmbeddingRequest(ctx, req, cfg)
-}
-
-func (c *CommonClient) WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error {
-	e, _, err := prepareCapability[embedder](c, "embeddings", opts)
-	if err != nil {
-		return err
-	}
-	return e.writeEmbeddingResponse(w, resp)
-}
-
-func (c *CommonClient) ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error) {
-	r, _, err := prepareCapability[reranker](c, "rerank", opts)
-	if err != nil {
-		return nil, err
-	}
-	return r.parseRerankRequest(req)
-}
-
-func (c *CommonClient) ExecRerank(ctx context.Context, req *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error) {
-	r, cfg, err := prepareCapability[reranker](c, "rerank", opts)
-	if err != nil {
-		return nil, err
-	}
-	return r.buildRerankRequest(ctx, req, cfg)
-}
-
-func (c *CommonClient) WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error {
-	r, _, err := prepareCapability[reranker](c, "rerank", opts)
-	if err != nil {
-		return err
-	}
-	return r.writeRerankResponse(w, resp)
 }
 
 // resolveProviderAndModel determines the provider and resolves model aliases

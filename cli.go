@@ -3,9 +3,7 @@ package echo
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -174,54 +172,6 @@ func (p *CLIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 	ch <- StreamChunk{Error: nil}
 	close(ch)
 	return &StreamResponse{Stream: ch}, nil
-}
-
-// parseCompletionRequest accepts OpenAI-format completion payloads so that a
-// CLI provider can sit behind the proxy helpers just like the HTTP providers.
-func (p *CLIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	var r CompletionRequest
-	if err := json.NewDecoder(req.Body).Decode(&r); err != nil {
-		return nil, fmt.Errorf("failed to parse cli completion request: %w", err)
-	}
-	return &r, nil
-}
-
-func (p *CLIProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
-	msgs := make([]Message, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		role := m.Role
-		if role == "assistant" {
-			role = Agent
-		}
-		msgs = append(msgs, Message{Role: role, Content: m.Content})
-	}
-
-	resp, err := p.call(ctx, msgs, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	out := &CompletionResponse{
-		Object: "chat.completion",
-		Model:  cfg.Model,
-		Choices: make([]struct {
-			Index   int `json:"index"`
-			Message struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason,omitempty"`
-		}, 1),
-	}
-	out.Choices[0].Message.Role = "assistant"
-	out.Choices[0].Message.Content = resp.Text
-	out.Choices[0].FinishReason = "stop"
-	return out, nil
-}
-
-func (p *CLIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
 }
 
 // NewClaudeCLIProvider returns a provider wired for the Claude Code CLI.

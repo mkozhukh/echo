@@ -2,7 +2,6 @@ package echo
 
 import (
 	"context"
-	"net/http"
 )
 
 // Client is the main interface for LLM operations
@@ -20,30 +19,6 @@ type Client interface {
 	// Decide evaluates typed questions (choice, score, noul) against the state
 	// and returns structured answers. Supported by decision models (e.g. typesafe/jev-latest).
 	Decide(ctx context.Context, state any, questions Questions, opts ...CallOption) (*DecisionResponse, error)
-}
-
-// ProxyClient extends Client with HTTP proxy capabilities for building LLM proxies
-// that can parse requests in one provider format and forward to another
-type ProxyClient interface {
-	Client
-	// ParseComplete parses a completion request from HTTP request
-	ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error)
-	// ExecComplete executes a completion request and returns a CompletionResponse
-	ExecComplete(ctx context.Context, req *CompletionRequest, opts ...CallOption) (*CompletionResponse, error)
-	// WriteComplete writes a completion response to the response writer
-	WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error
-	// ParseEmbedding parses an embedding request from HTTP request
-	ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error)
-	// ExecEmbedding executes an embedding request and returns a UnifiedEmbeddingResponse
-	ExecEmbedding(ctx context.Context, req *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error)
-	// WriteEmbedding writes an embedding response to the response writer
-	WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error
-	// ParseRerank parses a rerank request from HTTP request
-	ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error)
-	// ExecRerank executes a rerank request and returns a UnifiedRerankResponse
-	ExecRerank(ctx context.Context, req *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error)
-	// WriteRerank writes a rerank response to the response writer
-	WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error
 }
 
 type Metadata = map[string]any
@@ -74,80 +49,6 @@ type EmbeddingResponse struct {
 type RerankResponse struct {
 	Scores   []float32 `json:"scores"`
 	Metadata Metadata  `json:"metadata,omitempty"`
-}
-
-// CompletionRequest represents a unified completion request
-// Using OpenAI format as the common format to minimize data copying
-type CompletionRequest = OpenAIRequest
-
-// EmbeddingRequest represents a unified embedding request
-// Based on OpenAI's embedding format
-type EmbeddingRequest struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
-}
-
-// RerankRequest represents a unified reranking request
-// Based on Voyage AI's rerank format
-type RerankRequest struct {
-	Model     string   `json:"model"`
-	Query     string   `json:"query"`
-	Documents []string `json:"documents"`
-}
-
-// Unified response structures for Build methods
-// Using OpenAI format as the common format to minimize data copying
-
-// CompletionResponse represents a unified completion response
-// Based on OpenAI's chat completion format
-type CompletionResponse struct {
-	ID      string `json:"id,omitempty"`
-	Object  string `json:"object,omitempty"`
-	Created int64  `json:"created,omitempty"`
-	Model   string `json:"model,omitempty"`
-	Choices []struct {
-		Index   int `json:"index"`
-		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason,omitempty"`
-	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
-}
-
-// UnifiedEmbeddingResponse represents a unified embedding response
-// Based on OpenAI's embedding format
-type UnifiedEmbeddingResponse struct {
-	Object string `json:"object,omitempty"`
-	Data   []struct {
-		Object    string    `json:"object,omitempty"`
-		Embedding []float32 `json:"embedding"`
-		Index     int       `json:"index"`
-	} `json:"data"`
-	Model string `json:"model,omitempty"`
-	Usage *struct {
-		PromptTokens int `json:"prompt_tokens"`
-		TotalTokens  int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
-}
-
-// UnifiedRerankResponse represents a unified reranking response
-// Based on Voyage AI's rerank format
-type UnifiedRerankResponse struct {
-	Results []struct {
-		Index          int     `json:"index"`
-		Document       string  `json:"document,omitempty"`
-		RelevanceScore float32 `json:"relevance_score"`
-	} `json:"results"`
-	Model string `json:"model,omitempty"`
-	Usage *struct {
-		TotalTokens int `json:"total_tokens,omitempty"`
-	} `json:"usage,omitempty"`
 }
 
 // CallOption allows optional parameters for calls
