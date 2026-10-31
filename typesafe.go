@@ -88,23 +88,7 @@ func (p *TypeSafeProvider) streamCall(ctx context.Context, messages []Message, c
 	return nil, errTypeSafeOnlyDecisions
 }
 
-func (p *TypeSafeProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
 func (p *TypeSafeProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
 	return nil, errTypeSafeOnlyDecisions
 }
 
@@ -112,22 +96,6 @@ func (p *TypeSafeProvider) buildCompletionRequest(ctx context.Context, req *Comp
 	return nil, errTypeSafeOnlyDecisions
 }
 
-func (p *TypeSafeProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, errTypeSafeOnlyDecisions
-}
-
 func (p *TypeSafeProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
-	return errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	return errTypeSafeOnlyDecisions
-}
-
-func (p *TypeSafeProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
 	return errTypeSafeOnlyDecisions
 }

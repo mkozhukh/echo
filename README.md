@@ -364,7 +364,7 @@ The state can be a string or any JSON-serializable value. Options are sent in th
 Use `WithCriteria` to clarify a `Noul` question, or build a `Question` literal for object/array instructions.
 Usage stats are in `resp.Metadata` (`input_tokens`, `output_tokens`, `total_tokens`).
 
-Other providers return a "not supported" error for `Decide`; the `mock` provider returns deterministic
+Other providers return a "does not support decisions" error for `Decide`; the `mock` provider returns deterministic
 answers (first option, lowest level, 0.5) for tests. TypeSafe supports only `Decide`.
 
 ## E2E Testing

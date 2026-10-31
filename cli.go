@@ -176,16 +176,6 @@ func (p *CLIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 	return &StreamResponse{Stream: ch}, nil
 }
 
-// getEmbeddings is not supported by CLI providers.
-func (p *CLIProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-// reRank is not supported by CLI providers.
-func (p *CLIProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("rerank is not supported by cli providers")
-}
-
 // parseCompletionRequest accepts OpenAI-format completion payloads so that a
 // CLI provider can sit behind the proxy helpers just like the HTTP providers.
 func (p *CLIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
@@ -194,14 +184,6 @@ func (p *CLIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequ
 		return nil, fmt.Errorf("failed to parse cli completion request: %w", err)
 	}
 	return &r, nil
-}
-
-func (p *CLIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-func (p *CLIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("rerank is not supported by cli providers")
 }
 
 func (p *CLIProvider) buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error) {
@@ -237,25 +219,9 @@ func (p *CLIProvider) buildCompletionRequest(ctx context.Context, req *Completio
 	return out, nil
 }
 
-func (p *CLIProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-func (p *CLIProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("rerank is not supported by cli providers")
-}
-
 func (p *CLIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
-}
-
-func (p *CLIProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	return fmt.Errorf("embeddings are not supported by cli providers")
-}
-
-func (p *CLIProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("rerank is not supported by cli providers")
 }
 
 // NewClaudeCLIProvider returns a provider wired for the Claude Code CLI.

@@ -8,27 +8,55 @@ import (
 	"strings"
 )
 
-// provider interface for internal provider implementations
+// Provider is the core interface for provider implementations: chat completions.
+// Additional capabilities (embeddings, reranking, decisions) are optional and
+// implemented through the embedder, reranker and decider interfaces.
 type Provider interface {
 	call(ctx context.Context, messages []Message, cfg CallConfig) (*Response, error)
 	streamCall(ctx context.Context, messages []Message, cfg CallConfig) (*StreamResponse, error)
+
+	// Proxy support: parse HTTP request, execute, write HTTP response
+	parseCompletionRequest(req *http.Request) (*CompletionRequest, error)
+	buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error)
+	writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error
+}
+
+// embedder is an optional provider capability for embeddings.
+type embedder interface {
 	getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error)
+
+	parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error)
+	buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error)
+	writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error
+}
+
+// reranker is an optional provider capability for document reranking.
+type reranker interface {
 	reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error)
 
-	// Parse HTTP requests into unified request structures
-	parseCompletionRequest(req *http.Request) (*CompletionRequest, error)
-	parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error)
 	parseRerankRequest(req *http.Request) (*RerankRequest, error)
-
-	// Build methods - consume parsed requests and return unified responses
-	buildCompletionRequest(ctx context.Context, req *CompletionRequest, cfg CallConfig) (*CompletionResponse, error)
-	buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error)
 	buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error)
-
-	// Write methods - write unified responses back as HTTP responses
-	writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error
-	writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error
 	writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error
+}
+
+// compile-time checks for provider capabilities
+var (
+	_ embedder = (*OpenAIProvider)(nil)
+	_ embedder = (*GoogleProvider)(nil)
+	_ embedder = (*VoyageProvider)(nil)
+	_ reranker = (*VoyageProvider)(nil)
+	_ decider  = (*TypeSafeProvider)(nil)
+	_ decider  = (*MockProvider)(nil)
+)
+
+// capability returns the provider as capability T, or an error naming the provider
+func capability[T any](p Provider, providerName, feature string) (T, error) {
+	c, ok := p.(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("provider %q does not support %s", providerName, feature)
+	}
+	return c, nil
 }
 
 // CommonClient is the main client that delegates to appropriate providers
@@ -99,6 +127,12 @@ func NewCommonClient(keys map[string]string, opts ...CallOption) (Client, error)
 
 // prepareCall resolves provider, model, and configuration for a call
 func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, error) {
+	_, p, cfg, err := c.resolveCall(opts...)
+	return p, cfg, err
+}
+
+// resolveCall merges options and resolves provider name, provider and configuration
+func (c *CommonClient) resolveCall(opts ...CallOption) (string, Provider, CallConfig, error) {
 	// Merge configs
 	cfg := c.baseConfig
 	for _, opt := range opts {
@@ -108,7 +142,7 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, er
 	// Resolve provider and model
 	providerName, resolvedModel, endpoint, err := c.resolveProviderAndModel(cfg.Model)
 	if err != nil {
-		return nil, cfg, err
+		return "", nil, cfg, err
 	}
 
 	// Update config with resolved model
@@ -118,7 +152,7 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, er
 	// Get provider
 	p, ok := c.providerMap[providerName]
 	if !ok {
-		return nil, cfg, fmt.Errorf("unknown provider: %s", providerName)
+		return providerName, nil, cfg, fmt.Errorf("unknown provider: %s", providerName)
 	}
 
 	// Special handling for openrouter
@@ -128,33 +162,21 @@ func (c *CommonClient) prepareCall(opts ...CallOption) (Provider, CallConfig, er
 		}
 	}
 
-	return p, cfg, nil
+	return providerName, p, cfg, nil
 }
 
-// prepareCall resolves provider, model, and configuration for a call
-func (c *CommonClient) getProvider(opts ...CallOption) (Provider, error) {
-	// Merge configs
-	cfg := c.baseConfig
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-
-	// Resolve provider and model
-	providerName, _, _, err := c.resolveProviderAndModel(cfg.Model)
+// prepareCapability resolves the call and returns the provider as capability T
+func prepareCapability[T any](c *CommonClient, feature string, opts []CallOption) (T, CallConfig, error) {
+	name, p, cfg, err := c.resolveCall(opts...)
 	if err != nil {
-		return nil, err
+		var zero T
+		return zero, cfg, err
 	}
-
-	// Get provider
-	p, ok := c.providerMap[providerName]
-	if !ok {
-		return nil, fmt.Errorf("unknown provider: %s", providerName)
-	}
-
-	return p, nil
+	t, err := capability[T](p, name, feature)
+	return t, cfg, err
 }
 
-// Call implements the Client interface
+// Complete implements the Client interface
 func (c *CommonClient) Complete(ctx context.Context, messages []Message, opts ...CallOption) (*Response, error) {
 	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
@@ -163,7 +185,7 @@ func (c *CommonClient) Complete(ctx context.Context, messages []Message, opts ..
 	return p.call(ctx, messages, cfg)
 }
 
-// StreamCall implements the Client interface
+// StreamComplete implements the Client interface
 func (c *CommonClient) StreamComplete(ctx context.Context, messages []Message, opts ...CallOption) (*StreamResponse, error) {
 	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
@@ -174,40 +196,40 @@ func (c *CommonClient) StreamComplete(ctx context.Context, messages []Message, o
 
 // GetEmbeddings implements the Client interface
 func (c *CommonClient) GetEmbeddings(ctx context.Context, texts []string, opts ...CallOption) (*EmbeddingResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	e, cfg, err := prepareCapability[embedder](c, "embeddings", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.getEmbeddings(ctx, texts, cfg)
+	return e.getEmbeddings(ctx, texts, cfg)
 }
 
 // ReRank implements the Client interface
 func (c *CommonClient) ReRank(ctx context.Context, query string, documents []string, opts ...CallOption) (*RerankResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+	r, cfg, err := prepareCapability[reranker](c, "rerank", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.reRank(ctx, query, documents, cfg)
+	return r.reRank(ctx, query, documents, cfg)
 }
 
 func (c *CommonClient) ParseComplete(req *http.Request, opts ...CallOption) (*CompletionRequest, error) {
-	p, err := c.getProvider(opts...)
+	p, _, err := c.prepareCall(opts...)
 	if err != nil {
 		return nil, err
 	}
 	return p.parseCompletionRequest(req)
 }
 
-func (c *CommonClient) ExecComplete(ctx context.Context, CompletionRequest *CompletionRequest, opts ...CallOption) (*CompletionResponse, error) {
+func (c *CommonClient) ExecComplete(ctx context.Context, req *CompletionRequest, opts ...CallOption) (*CompletionResponse, error) {
 	p, cfg, err := c.prepareCall(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return p.buildCompletionRequest(ctx, CompletionRequest, cfg)
+	return p.buildCompletionRequest(ctx, req, cfg)
 }
 
 func (c *CommonClient) WriteComplete(w http.ResponseWriter, resp *CompletionResponse, opts ...CallOption) error {
-	p, err := c.getProvider(opts...)
+	p, _, err := c.prepareCall(opts...)
 	if err != nil {
 		return err
 	}
@@ -215,51 +237,51 @@ func (c *CommonClient) WriteComplete(w http.ResponseWriter, resp *CompletionResp
 }
 
 func (c *CommonClient) ParseEmbedding(req *http.Request, opts ...CallOption) (*EmbeddingRequest, error) {
-	p, err := c.getProvider(opts...)
+	e, _, err := prepareCapability[embedder](c, "embeddings", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.parseEmbeddingRequest(req)
+	return e.parseEmbeddingRequest(req)
 }
 
-func (c *CommonClient) ExecEmbedding(ctx context.Context, EmbeddingRequest *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+func (c *CommonClient) ExecEmbedding(ctx context.Context, req *EmbeddingRequest, opts ...CallOption) (*UnifiedEmbeddingResponse, error) {
+	e, cfg, err := prepareCapability[embedder](c, "embeddings", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.buildEmbeddingRequest(ctx, EmbeddingRequest, cfg)
+	return e.buildEmbeddingRequest(ctx, req, cfg)
 }
 
 func (c *CommonClient) WriteEmbedding(w http.ResponseWriter, resp *UnifiedEmbeddingResponse, opts ...CallOption) error {
-	p, err := c.getProvider(opts...)
+	e, _, err := prepareCapability[embedder](c, "embeddings", opts)
 	if err != nil {
 		return err
 	}
-	return p.writeEmbeddingResponse(w, resp)
+	return e.writeEmbeddingResponse(w, resp)
 }
 
 func (c *CommonClient) ParseRerank(req *http.Request, opts ...CallOption) (*RerankRequest, error) {
-	p, err := c.getProvider(opts...)
+	r, _, err := prepareCapability[reranker](c, "rerank", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.parseRerankRequest(req)
+	return r.parseRerankRequest(req)
 }
 
-func (c *CommonClient) ExecRerank(ctx context.Context, RerankRequest *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error) {
-	p, cfg, err := c.prepareCall(opts...)
+func (c *CommonClient) ExecRerank(ctx context.Context, req *RerankRequest, opts ...CallOption) (*UnifiedRerankResponse, error) {
+	r, cfg, err := prepareCapability[reranker](c, "rerank", opts)
 	if err != nil {
 		return nil, err
 	}
-	return p.buildRerankRequest(ctx, RerankRequest, cfg)
+	return r.buildRerankRequest(ctx, req, cfg)
 }
 
 func (c *CommonClient) WriteRerank(w http.ResponseWriter, resp *UnifiedRerankResponse, opts ...CallOption) error {
-	p, err := c.getProvider(opts...)
+	r, _, err := prepareCapability[reranker](c, "rerank", opts)
 	if err != nil {
 		return err
 	}
-	return p.writeRerankResponse(w, resp)
+	return r.writeRerankResponse(w, resp)
 }
 
 // resolveProviderAndModel determines the provider and resolves model aliases

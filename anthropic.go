@@ -414,18 +414,6 @@ func processAnthropicSSEMessage(msg SSEMessage, ch chan StreamChunk, totalInputT
 	return nil
 }
 
-// getEmbeddings implements the provider interface for Anthropic
-// Note: Anthropic does not currently support embeddings API
-func (p *AnthropicProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// reRank implements the provider interface for Anthropic
-// Note: Anthropic does not currently support reranking API
-func (p *AnthropicProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support reranking API")
-}
-
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 // Converts from Anthropic format to OpenAI-compatible format
 func (p *AnthropicProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
@@ -476,18 +464,6 @@ func (p *AnthropicProvider) parseCompletionRequest(req *http.Request) (*Completi
 	}
 
 	return completionReq, nil
-}
-
-// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-// Anthropic does not support embeddings, so this returns an error
-func (p *AnthropicProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-// Anthropic does not support reranking, so this returns an error
-func (p *AnthropicProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("Anthropic does not support reranking API")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
@@ -586,32 +562,8 @@ func (p *AnthropicProvider) buildCompletionRequest(ctx context.Context, req *Com
 	return completionResp, nil
 }
 
-// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-// Anthropic does not support embeddings, so this returns an error
-func (p *AnthropicProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-// Anthropic does not support reranking, so this returns an error
-func (p *AnthropicProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("Anthropic does not support reranking API")
-}
-
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
 func (p *AnthropicProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-// Anthropic does not support embeddings, so this returns an error
-func (p *AnthropicProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	return fmt.Errorf("Anthropic does not support embeddings API")
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-// Anthropic does not support reranking, so this returns an error
-func (p *AnthropicProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("Anthropic does not support reranking API")
 }

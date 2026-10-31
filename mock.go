@@ -115,16 +115,6 @@ func (p *MockProvider) streamCall(ctx context.Context, messages []Message, cfg C
 	}, nil
 }
 
-// getEmbeddings implements the provider interface for mock embeddings
-func (p *MockProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// reRank implements the provider interface for mock reranking
-func (p *MockProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 func (p *MockProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
 	var completionReq CompletionRequest
@@ -132,16 +122,6 @@ func (p *MockProvider) parseCompletionRequest(req *http.Request) (*CompletionReq
 		return nil, fmt.Errorf("failed to parse mock completion request: %w", err)
 	}
 	return &completionReq, nil
-}
-
-// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-func (p *MockProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-func (p *MockProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("not implemented")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
@@ -190,33 +170,11 @@ func (p *MockProvider) buildCompletionRequest(ctx context.Context, req *Completi
 	return completionResp, nil
 }
 
-// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-func (p *MockProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-func (p *MockProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
 func (p *MockProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "plain/text")
 	_, err := w.Write([]byte(resp.Choices[0].Message.Content))
 	return err
-}
-
-// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-func (p *MockProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-func (p *MockProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(resp)
 }
 
 // decide implements the decider interface with deterministic answers:

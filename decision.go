@@ -158,14 +158,9 @@ func (c *CommonClient) Decide(ctx context.Context, state any, questions Question
 		return nil, err
 	}
 
-	p, cfg, err := c.prepareCall(opts...)
+	d, cfg, err := prepareCapability[decider](c, "decisions", opts)
 	if err != nil {
 		return nil, err
-	}
-
-	d, ok := p.(decider)
-	if !ok {
-		return nil, fmt.Errorf("decisions are not supported by model %q", cfg.Model)
 	}
 
 	return d.decide(ctx, DecisionRequest{State: state, Model: cfg.Model, Questions: questions}, cfg)

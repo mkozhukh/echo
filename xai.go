@@ -312,18 +312,6 @@ func (p *XAIProvider) streamCall(ctx context.Context, messages []Message, cfg Ca
 	return &StreamResponse{Stream: ch}, nil
 }
 
-// getEmbeddings implements the provider interface for xAI
-// Note: xAI embedding API support TBD
-func (p *XAIProvider) getEmbeddings(ctx context.Context, texts []string, cfg CallConfig) (*EmbeddingResponse, error) {
-	return nil, fmt.Errorf("xAI does not currently support embeddings API")
-}
-
-// reRank implements the provider interface for xAI
-// Note: xAI does not support reranking API
-func (p *XAIProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("xAI does not support reranking API")
-}
-
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 // For xAI, we use OpenAI format as the common format
 func (p *XAIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
@@ -332,18 +320,6 @@ func (p *XAIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequ
 		return nil, fmt.Errorf("failed to parse completion request: %w", err)
 	}
 	return &completionReq, nil
-}
-
-// parseEmbeddingRequest parses an HTTP request into an EmbeddingRequest
-// xAI does not support embeddings, so this returns an error
-func (p *XAIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingRequest, error) {
-	return nil, fmt.Errorf("xAI does not currently support embeddings API")
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-// xAI does not support reranking, so this returns an error
-func (p *XAIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("xAI does not support reranking API")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
@@ -427,32 +403,8 @@ func (p *XAIProvider) buildCompletionRequest(ctx context.Context, req *Completio
 	return completionResp, nil
 }
 
-// buildEmbeddingRequest builds and executes an embedding request, returning a unified response
-// xAI does not support embeddings, so this returns an error
-func (p *XAIProvider) buildEmbeddingRequest(ctx context.Context, req *EmbeddingRequest, cfg CallConfig) (*UnifiedEmbeddingResponse, error) {
-	return nil, fmt.Errorf("xAI does not currently support embeddings API")
-}
-
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-// xAI does not support reranking, so this returns an error
-func (p *XAIProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("xAI does not support reranking API")
-}
-
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
 func (p *XAIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeEmbeddingResponse writes a UnifiedEmbeddingResponse as JSON to the HTTP response writer
-// xAI does not support embeddings, so this returns an error
-func (p *XAIProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
-	return fmt.Errorf("xAI does not currently support embeddings API")
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-// xAI does not support reranking, so this returns an error
-func (p *XAIProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("xAI does not support reranking API")
 }

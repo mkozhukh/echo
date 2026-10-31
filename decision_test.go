@@ -75,7 +75,7 @@ func TestMockDecide(t *testing.T) {
 func TestDecideUnsupportedProvider(t *testing.T) {
 	client, _ := NewCommonClient(map[string]string{"openai": "key"}, WithModel("openai/gpt-5"))
 	_, err := client.Decide(context.Background(), "x", Questions{"n": Noul("?")})
-	if err == nil || !strings.Contains(err.Error(), "not supported") {
+	if err == nil || !strings.Contains(err.Error(), "does not support") {
 		t.Errorf("expected not supported error, got %v", err)
 	}
 }
@@ -147,5 +147,23 @@ func TestTypeSafeAlias(t *testing.T) {
 	_, err = client.Complete(context.Background(), QuickMessage("hi"), WithModel("typesafe/jev-latest"))
 	if err == nil {
 		t.Errorf("expected Complete to be unsupported")
+	}
+}
+
+func TestCapabilityErrors(t *testing.T) {
+	ctx := context.Background()
+	client, _ := NewCommonClient(map[string]string{"anthropic": "k", "voyage": "k"})
+
+	_, err := client.ReRank(ctx, "q", []string{"a"}, WithModel("anthropic/claude-haiku-4-5"))
+	if err == nil || err.Error() != `provider "anthropic" does not support rerank` {
+		t.Errorf("rerank error = %v", err)
+	}
+	_, err = client.GetEmbeddings(ctx, []string{"a"}, WithModel("anthropic/claude-haiku-4-5"))
+	if err == nil || err.Error() != `provider "anthropic" does not support embeddings` {
+		t.Errorf("embeddings error = %v", err)
+	}
+	_, err = client.Decide(ctx, "s", Questions{"n": Noul("?")}, WithModel("voyage/voyage-4"))
+	if err == nil || err.Error() != `provider "voyage" does not support decisions` {
+		t.Errorf("decide error = %v", err)
 	}
 }

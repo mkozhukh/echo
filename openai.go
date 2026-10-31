@@ -418,12 +418,6 @@ func (p *OpenAIProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 	return response, nil
 }
 
-// reRank implements the provider interface for OpenAI
-// Note: OpenAI does not currently support reranking API
-func (p *OpenAIProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("OpenAI does not support reranking API")
-}
-
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 // For OpenAI, this is a direct JSON parse since we use OpenAI format as the common format
 func (p *OpenAIProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
@@ -442,12 +436,6 @@ func (p *OpenAIProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingReq
 		return nil, fmt.Errorf("failed to parse embedding request: %w", err)
 	}
 	return &embeddingReq, nil
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-// OpenAI does not support reranking, so this returns an error
-func (p *OpenAIProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("OpenAI does not support reranking API")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
@@ -578,12 +566,6 @@ func (p *OpenAIProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 	return unifiedResp, nil
 }
 
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-// OpenAI does not support reranking, so this returns an error
-func (p *OpenAIProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("OpenAI does not support reranking API")
-}
-
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
 func (p *OpenAIProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "application/json")
@@ -594,10 +576,4 @@ func (p *OpenAIProvider) writeCompletionResponse(w http.ResponseWriter, resp *Co
 func (p *OpenAIProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-// OpenAI does not support reranking, so this returns an error
-func (p *OpenAIProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("OpenAI does not support reranking API")
 }

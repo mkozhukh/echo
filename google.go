@@ -382,12 +382,6 @@ func (p *GoogleProvider) getEmbeddings(ctx context.Context, texts []string, cfg 
 	}, nil
 }
 
-// reRank implements the provider interface for Google
-// Note: Google does not currently support reranking API
-func (p *GoogleProvider) reRank(ctx context.Context, query string, documents []string, cfg CallConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("Google does not support reranking API")
-}
-
 // parseCompletionRequest parses an HTTP request into a CompletionRequest
 // Converts from Gemini format to OpenAI-compatible format
 func (p *GoogleProvider) parseCompletionRequest(req *http.Request) (*CompletionRequest, error) {
@@ -475,12 +469,6 @@ func (p *GoogleProvider) parseEmbeddingRequest(req *http.Request) (*EmbeddingReq
 	}
 
 	return embeddingReq, nil
-}
-
-// parseRerankRequest parses an HTTP request into a RerankRequest
-// Google does not support reranking, so this returns an error
-func (p *GoogleProvider) parseRerankRequest(req *http.Request) (*RerankRequest, error) {
-	return nil, fmt.Errorf("Google does not support reranking API")
 }
 
 // buildCompletionRequest builds and executes a completion request, returning a unified response
@@ -646,12 +634,6 @@ func (p *GoogleProvider) buildEmbeddingRequest(ctx context.Context, req *Embeddi
 	return unifiedResp, nil
 }
 
-// buildRerankRequest builds and executes a reranking request, returning a unified response
-// Google does not support reranking, so this returns an error
-func (p *GoogleProvider) buildRerankRequest(ctx context.Context, req *RerankRequest, cfg CallConfig) (*UnifiedRerankResponse, error) {
-	return nil, fmt.Errorf("Google does not support reranking API")
-}
-
 // writeCompletionResponse writes a CompletionResponse as JSON to the HTTP response writer
 func (p *GoogleProvider) writeCompletionResponse(w http.ResponseWriter, resp *CompletionResponse) error {
 	w.Header().Set("Content-Type", "application/json")
@@ -662,10 +644,4 @@ func (p *GoogleProvider) writeCompletionResponse(w http.ResponseWriter, resp *Co
 func (p *GoogleProvider) writeEmbeddingResponse(w http.ResponseWriter, resp *UnifiedEmbeddingResponse) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
-}
-
-// writeRerankResponse writes a UnifiedRerankResponse as JSON to the HTTP response writer
-// Google does not support reranking, so this returns an error
-func (p *GoogleProvider) writeRerankResponse(w http.ResponseWriter, resp *UnifiedRerankResponse) error {
-	return fmt.Errorf("Google does not support reranking API")
 }
